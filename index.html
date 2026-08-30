@@ -542,7 +542,7 @@
             islands.push({
                 type: 'block', cx: x, cz: z, mesh: group,
                 minX: x - width/2, maxX: x + width/2, minZ: z - depth/2, maxZ: z + depth/2,
-                topY: y + height/2, isSticky: isSticky, isRuler: isRuler
+                topY: y + height/2, bottomY: y - height/2, isSticky: isSticky, isRuler: isRuler
             });
             return group;
         }
@@ -558,10 +558,11 @@
             scene.add(group);
             group.updateMatrixWorld(true);
 
+            const thickness = radius * 0.4;
             islands.push({
                 type: 'tire', cx: x, cz: z, mesh: group,
                 outerRadius: radius * 1.4, innerRadius: radius * 0.6,
-                topY: y + (radius * 0.4)
+                topY: y + thickness, bottomY: y - thickness
             });
             return group;
         }
@@ -584,7 +585,7 @@
 
             islands.push({
                 type: 'eraser', cx: x, cz: z, mesh: group,
-                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + h/2
+                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + h/2, bottomY: y - h/2
             });
             return group;
         }
@@ -614,7 +615,7 @@
             const d = isRotated ? r * 1.5 : length + 8;
             islands.push({
                 type: 'pencil', cx: x, cz: z, mesh: group,
-                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + r * 0.9
+                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + r * 0.9, bottomY: y - r * 0.9
             });
             return group;
         }
@@ -630,7 +631,7 @@
             scene.add(group);
             group.updateMatrixWorld(true);
 
-            islands.push({ type: 'ring', cx: x, cz: z, mesh: group, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25 });
+            islands.push({ type: 'ring', cx: x, cz: z, mesh: group, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25, bottomY: y - 0.25 });
         }
 
         function createJumpPad(x, y, z, launchVx, launchVy, launchVz) {
@@ -1014,18 +1015,18 @@
             }
         }
 
-        function updatePhysics(delta) {
+        function singlePhysicsStep(subDelta) {
             const now = Date.now();
 
-            if (coyoteTimer > 0) coyoteTimer -= delta;
+            if (coyoteTimer > 0) coyoteTimer -= subDelta;
             if (jumpBufferTimer > 0) {
-                jumpBufferTimer -= delta;
+                jumpBufferTimer -= subDelta;
                 triggerJumpIfPossible();
             }
 
-            ballSquish.x += (1 - ballSquish.x) * 12 * delta;
-            ballSquish.y += (1 - ballSquish.y) * 12 * delta;
-            ballSquish.z += (1 - ballSquish.z) * 12 * delta;
+            ballSquish.x += (1 - ballSquish.x) * 12 * subDelta;
+            ballSquish.y += (1 - ballSquish.y) * 12 * subDelta;
+            ballSquish.z += (1 - ballSquish.z) * 12 * subDelta;
             if (player) player.scale.copy(ballSquish);
 
             const camF = new THREE.Vector3(); camera.getWorldDirection(camF); camF.y = 0; camF.normalize();
@@ -1040,12 +1041,10 @@
 
             const topSpeed = keys.boost ? 28 : 18;
             if (isGrounded) {
-                // Acceleration tuned for a satisfying feeling of mass
                 const accel = keys.boost ? 70 : 50;
-                velocity.x += inputDir.x * accel * delta;
-                velocity.z += inputDir.z * accel * delta;
+                velocity.x += inputDir.x * accel * subDelta;
+                velocity.z += inputDir.z * accel * subDelta;
 
-                // Reduced friction so the ball coasts smooth with natural weight/inertia
                 let friction = 3.8;
                 for (let cof of coffeePuddles) {
                     if (Math.abs(player.position.x - cof.x) < cof.r && Math.abs(player.position.z - cof.z) < cof.r) {
@@ -1054,21 +1053,21 @@
                 }
                 
                 if (inputDir.lengthSq() === 0 || friction < 2) {
-                    velocity.x -= velocity.x * friction * delta;
-                    velocity.z -= velocity.z * friction * delta;
+                    velocity.x -= velocity.x * friction * subDelta;
+                    velocity.z -= velocity.z * friction * subDelta;
                 } else {
                     const currentDir = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
                     if (currentDir.dot(inputDir) < 0.5) {
-                        velocity.x *= (1 - 3.5 * delta);
-                        velocity.z *= (1 - 3.5 * delta);
+                        velocity.x *= (1 - 3.5 * subDelta);
+                        velocity.z *= (1 - 3.5 * subDelta);
                     }
                 }
             } else {
                 const airAccel = keys.boost ? 40 : 30;
-                velocity.x += inputDir.x * airAccel * delta;
-                velocity.z += inputDir.z * airAccel * delta;
-                velocity.x *= (1 - 0.8 * delta);
-                velocity.z *= (1 - 0.8 * delta);
+                velocity.x += inputDir.x * airAccel * subDelta;
+                velocity.z += inputDir.z * airAccel * subDelta;
+                velocity.x *= (1 - 0.8 * subDelta);
+                velocity.z *= (1 - 0.8 * subDelta);
             }
 
             const hSpd = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
@@ -1077,10 +1076,10 @@
                 velocity.z = (velocity.z / hSpd) * topSpeed;
             }
 
-            velocity.y -= GRAVITY * delta;
+            velocity.y -= GRAVITY * subDelta;
             for (let w of windCurrents) {
                 if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) {
-                    velocity.y += 45 * delta;
+                    velocity.y += 45 * subDelta;
                 }
             }
 
@@ -1090,12 +1089,30 @@
                 }
             }
 
-            const prevPosY = player.position.y;
-            player.position.x += velocity.x * delta;
-            player.position.y += velocity.y * delta;
-            player.position.z += velocity.z * delta;
+            // Jump Pads Collision & Launch
+            jumpPads.forEach(pad => {
+                const distXZ = Math.hypot(player.position.x - pad.pos.x, player.position.z - pad.pos.z);
+                const distY = Math.abs((player.position.y - BALL_RADIUS) - pad.pos.y);
+                if (distXZ < 2.6 && distY < 2.0 && (now - lastPadHitTime > 250)) {
+                    lastPadHitTime = now;
+                    velocity.x = pad.launch.x;
+                    velocity.y = pad.launch.y;
+                    velocity.z = pad.launch.z;
+                    isGrounded = false;
+                    coyoteTimer = 0;
+                    ballSquish.set(0.6, 1.5, 0.6);
+                    createDustBurst(pad.pos.x, pad.pos.y + 0.3, pad.pos.z, 12, 0xff3838);
+                    playPadSound();
+                    showToast("SUPER LAUNCH! 🚀");
+                }
+            });
 
-            const moveDist = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) * delta;
+            const prevPos = player.position.clone();
+            player.position.x += velocity.x * subDelta;
+            player.position.y += velocity.y * subDelta;
+            player.position.z += velocity.z * subDelta;
+
+            const moveDist = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) * subDelta;
             if (moveDist > 0.001) {
                 const moveDir = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
                 const rotAxis = new THREE.Vector3(moveDir.z, 0, -moveDir.x);
@@ -1135,45 +1152,67 @@
 
             isGrounded = false;
 
-            // Island Collisions
+            // Island Collision Detection (Continuous Vertical Ray + Solid Side Bounds)
             islands.forEach(island => {
-                if (velocity.y <= 1.0) {
-                    if (island.type === 'block' || island.type === 'eraser' || island.type === 'pencil') {
-                        if (player.position.x >= island.minX - BALL_RADIUS*0.8 && player.position.x <= island.maxX + BALL_RADIUS*0.8 &&
-                            player.position.z >= island.minZ - BALL_RADIUS*0.8 && player.position.z <= island.maxZ + BALL_RADIUS*0.8) {
-                            
-                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
-                                player.position.y = island.topY + BALL_RADIUS;
-                                velocity.y = 0;
-                                if (!isGrounded && prevPosY - player.position.y > 5) {
-                                    ballSquish.set(1.3, 0.7, 1.3);
-                                }
-                                isGrounded = true;
-                                coyoteTimer = 0.15;
-                                jumpsLeft = unlocks.maxJumps;
+                if (island.type === 'block' || island.type === 'eraser' || island.type === 'pencil') {
+                    const expandedMinX = island.minX - BALL_RADIUS * 0.7;
+                    const expandedMaxX = island.maxX + BALL_RADIUS * 0.7;
+                    const expandedMinZ = island.minZ - BALL_RADIUS * 0.7;
+                    const expandedMaxZ = island.maxZ + BALL_RADIUS * 0.7;
+
+                    if (player.position.x >= expandedMinX && player.position.x <= expandedMaxX &&
+                        player.position.z >= expandedMinZ && player.position.z <= expandedMaxZ) {
+
+                        // Vertical top surface hit test
+                        const topSurface = island.topY + BALL_RADIUS;
+                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
+                            if (player.position.y < topSurface) {
+                                player.position.y = topSurface;
+                            }
+                            if (prevPos.y - player.position.y > 4) {
+                                ballSquish.set(1.3, 0.7, 1.3);
+                            }
+                            velocity.y = 0;
+                            isGrounded = true;
+                            coyoteTimer = 0.15;
+                            jumpsLeft = unlocks.maxJumps;
+                        } 
+                        // Horizontal side bounce/pushback (preventing side phase-through)
+                        else if (player.position.y < island.topY + BALL_RADIUS * 0.6 && player.position.y > island.bottomY - BALL_RADIUS * 0.6) {
+                            const overlapLeft = player.position.x - island.minX;
+                            const overlapRight = island.maxX - player.position.x;
+                            const overlapFront = player.position.z - island.minZ;
+                            const overlapBack = island.maxZ - player.position.z;
+
+                            const minOverlap = Math.min(overlapLeft, overlapRight, overlapFront, overlapBack);
+
+                            if (minOverlap === overlapLeft) {
+                                player.position.x = island.minX - BALL_RADIUS;
+                                velocity.x = Math.min(0, velocity.x);
+                            } else if (minOverlap === overlapRight) {
+                                player.position.x = island.maxX + BALL_RADIUS;
+                                velocity.x = Math.max(0, velocity.x);
+                            } else if (minOverlap === overlapFront) {
+                                player.position.z = island.minZ - BALL_RADIUS;
+                                velocity.z = Math.min(0, velocity.z);
+                            } else if (minOverlap === overlapBack) {
+                                player.position.z = island.maxZ + BALL_RADIUS;
+                                velocity.z = Math.max(0, velocity.z);
                             }
                         }
-                    } else if (island.type === 'tire') {
-                        const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
-                        if (dist >= island.innerRadius && dist <= island.outerRadius) {
-                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
-                                player.position.y = island.topY + BALL_RADIUS;
-                                velocity.y = 0;
-                                isGrounded = true;
-                                coyoteTimer = 0.15;
-                                jumpsLeft = unlocks.maxJumps;
-                            }
-                        }
-                    } else if (island.type === 'ring') {
-                        const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
-                        if (dist <= island.outerRadius) {
-                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
-                                player.position.y = island.topY + BALL_RADIUS;
-                                velocity.y = 0;
-                                isGrounded = true;
-                                coyoteTimer = 0.15;
-                                jumpsLeft = unlocks.maxJumps;
-                            }
+                    }
+                } else if (island.type === 'tire' || island.type === 'ring') {
+                    const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
+                    const isInsideRadius = (island.type === 'ring') ? (dist <= island.outerRadius) : (dist >= island.innerRadius && dist <= island.outerRadius);
+                    
+                    if (isInsideRadius) {
+                        const topSurface = island.topY + BALL_RADIUS;
+                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
+                            player.position.y = topSurface;
+                            velocity.y = 0;
+                            isGrounded = true;
+                            coyoteTimer = 0.15;
+                            jumpsLeft = unlocks.maxJumps;
                         }
                     }
                 }
@@ -1181,42 +1220,61 @@
 
             // Moving Platform Collisions
             movingPlatforms.forEach(mp => {
-                if (velocity.y <= 1.0) {
-                    const halfW = mp.width / 2;
-                    const halfD = mp.depth / 2;
-                    const topY = mp.mesh.position.y + mp.thickness / 2;
-                    
-                    if (player.position.x >= mp.mesh.position.x - halfW - BALL_RADIUS*0.5 &&
-                        player.position.x <= mp.mesh.position.x + halfW + BALL_RADIUS*0.5 &&
-                        player.position.z >= mp.mesh.position.z - halfD - BALL_RADIUS*0.5 &&
-                        player.position.z <= mp.mesh.position.z + halfD + BALL_RADIUS*0.5) {
-                        
-                        if (prevPosY >= topY + BALL_RADIUS - 0.6 && player.position.y <= topY + BALL_RADIUS + 0.4) {
-                            player.position.y = topY + BALL_RADIUS;
-                            velocity.y = 0;
-                            isGrounded = true;
-                            coyoteTimer = 0.15;
-                            jumpsLeft = unlocks.maxJumps;
-                            if (mp.deltaPos) {
-                                player.position.add(mp.deltaPos);
-                            }
-                        }
-                    }
-                }
-            });
+                const halfW = mp.width / 2;
+                const halfD = mp.depth / 2;
+                const topY = mp.mesh.position.y + mp.thickness / 2;
+                const bottomY = mp.mesh.position.y - mp.thickness / 2;
+                
+                const minX = mp.mesh.position.x - halfW;
+                const maxX = mp.mesh.position.x + halfW;
+                const minZ = mp.mesh.position.z - halfD;
+                const maxZ = mp.mesh.position.z + halfD;
 
-            // Jump Pad Collisions
-            jumpPads.forEach(jp => {
-                const dist2D = Math.sqrt(Math.pow(player.position.x - jp.pos.x, 2) + Math.pow(player.position.z - jp.pos.z, 2));
-                if (dist2D < 2.5 && Math.abs(player.position.y - (jp.pos.y + 0.3)) < 1.5) {
-                    if (now - lastPadHitTime > 300) {
-                        lastPadHitTime = now;
-                        velocity.x = jp.launch.x;
-                        velocity.y = jp.launch.y;
-                        velocity.z = jp.launch.z;
-                        ballSquish.set(0.6, 1.5, 0.6);
-                        createDustBurst(player.position.x, player.position.y, player.position.z, 12, 0xff3838);
-                        playPadSound();
+                const expandedMinX = minX - BALL_RADIUS * 0.7;
+                const expandedMaxX = maxX + BALL_RADIUS * 0.7;
+                const expandedMinZ = minZ - BALL_RADIUS * 0.7;
+                const expandedMaxZ = maxZ + BALL_RADIUS * 0.7;
+
+                if (player.position.x >= expandedMinX && player.position.x <= expandedMaxX &&
+                    player.position.z >= expandedMinZ && player.position.z <= expandedMaxZ) {
+                    
+                    const topSurface = topY + BALL_RADIUS;
+                    // Detect landing on top surface or remaining on top surface
+                    if (prevPos.y >= topY + BALL_RADIUS - 0.8 && player.position.y <= topSurface + 0.6 && velocity.y <= 1.0) {
+                        player.position.y = topSurface;
+                        if (velocity.y < 0) velocity.y = 0;
+                        isGrounded = true;
+                        coyoteTimer = 0.15;
+                        jumpsLeft = unlocks.maxJumps;
+                        
+                        // Carry player smoothly scaled by physics sub-steps (3 sub-steps per frame)
+                        if (mp.deltaPos) {
+                            player.position.x += mp.deltaPos.x / 3;
+                            player.position.y += mp.deltaPos.y / 3;
+                            player.position.z += mp.deltaPos.z / 3;
+                        }
+                    } else if (player.position.y < topY + BALL_RADIUS * 0.6 && player.position.y > bottomY - BALL_RADIUS * 0.6) {
+                        // Side collision prevention against platform edges
+                        const overlapLeft = player.position.x - minX;
+                        const overlapRight = maxX - player.position.x;
+                        const overlapFront = player.position.z - minZ;
+                        const overlapBack = maxZ - player.position.z;
+
+                        const minOverlap = Math.min(overlapLeft, overlapRight, overlapFront, overlapBack);
+
+                        if (minOverlap === overlapLeft) {
+                            player.position.x = minX - BALL_RADIUS;
+                            velocity.x = Math.min(0, velocity.x);
+                        } else if (minOverlap === overlapRight) {
+                            player.position.x = maxX + BALL_RADIUS;
+                            velocity.x = Math.max(0, velocity.x);
+                        } else if (minOverlap === overlapFront) {
+                            player.position.z = minZ - BALL_RADIUS;
+                            velocity.z = Math.min(0, velocity.z);
+                        } else if (minOverlap === overlapBack) {
+                            player.position.z = maxZ + BALL_RADIUS;
+                            velocity.z = Math.max(0, velocity.z);
+                        }
                     }
                 }
             });
@@ -1239,11 +1297,11 @@
             // Crystals Pickups
             crystals.forEach((c, idx) => {
                 if (!c.collected) {
-                    c.mesh.rotation.y += delta * 2;
+                    c.mesh.rotation.y += subDelta * 2;
                     c.mesh.position.y = c.initialY + Math.sin(now * 0.003 + idx) * 0.3;
                     
                     if (unlocks.magnet && player.position.distanceTo(c.mesh.position) < 15) {
-                        c.mesh.position.lerp(player.position, delta * 5);
+                        c.mesh.position.lerp(player.position, subDelta * 5);
                     }
 
                     if (player.position.distanceTo(c.mesh.position) < 2.5) {
@@ -1269,7 +1327,7 @@
             // Secret Letters
             secretLetters.forEach(l => {
                 if (!l.collected) {
-                    l.mesh.rotation.y += delta * 1.5;
+                    l.mesh.rotation.y += subDelta * 1.5;
                     if (player.position.distanceTo(l.mesh.position) < 2.5) {
                         l.collected = true;
                         scene.remove(l.mesh);
@@ -1301,9 +1359,18 @@
                 showToast("LEVEL COMPLETE!");
             }
 
-            // Fall Off Map / Out of Bounds Check
+            // Fall Off Map Check
             if (player.position.y < -30) {
                 respawnPlayer();
+            }
+        }
+
+        function updatePhysics(delta) {
+            // Split frame step into 3 sub-steps for solid precision against fast velocity clipping
+            const subSteps = 3;
+            const subDelta = delta / subSteps;
+            for (let s = 0; s < subSteps; s++) {
+                singlePhysicsStep(subDelta);
             }
         }
 
@@ -1369,6 +1436,18 @@
                             }
                         }
                     });
+
+                    movingPlatforms.forEach(mp => {
+                        const halfW = mp.width / 2;
+                        const halfD = mp.depth / 2;
+                        const topY = mp.mesh.position.y + mp.thickness / 2;
+                        if (player.position.x >= mp.mesh.position.x - halfW && player.position.x <= mp.mesh.position.x + halfW &&
+                            player.position.z >= mp.mesh.position.z - halfD && player.position.z <= mp.mesh.position.z + halfD &&
+                            topY <= player.position.y + 0.1) {
+                            if (topY > groundY) groundY = topY;
+                        }
+                    });
+
                     shadowMesh.position.y = Math.max(-20, groundY + 0.05);
                     const distToGround = Math.max(0.1, player.position.y - shadowMesh.position.y);
                     const shadowScale = Math.max(0.3, 1.2 - distToGround * 0.03);
@@ -1396,6 +1475,7 @@
             }
             if (backMpBtn) {
                 backMpBtn.onclick = () => {
+                    document.getElementById('multiplayer-card').classList.hidden = false;
                     document.getElementById('multiplayer-card').classList.add('hidden');
                     document.getElementById('start-card').classList.remove('hidden');
                 };
@@ -1458,7 +1538,6 @@
                 document.getElementById('shop-card').classList.remove('hidden');
             };
             document.getElementById('close-shop-btn').onclick = () => {
-                document.getElementById('shop-card').classList.hidden = false;
                 document.getElementById('shop-card').classList.add('hidden');
                 document.getElementById('start-card').classList.remove('hidden');
             };
