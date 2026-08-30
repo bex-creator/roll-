@@ -27,7 +27,7 @@
         #hud {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             pointer-events: none; display: flex; flex-direction: column;
-            justify-content: space-between; padding: 20px; box-sizing: border-box; z-index: 10;
+            justify-space: space-between; padding: 20px; box-sizing: border-box; z-index: 10;
         }
 
         .hud-card {
@@ -38,18 +38,20 @@
         .btn-action {
             transition: transform 0.1s; pointer-events: auto; border: 4px solid #000;
             box-shadow: 6px 6px 0px #000; border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+            cursor: pointer;
         }
         .btn-action:hover { transform: translate(-2px, -2px) scale(1.02); box-shadow: 8px 8px 0px #000; }
         .btn-action:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0px #000; }
 
         #overlay {
-            position: absolute; inset: 0; background: rgba(253, 251, 247, 0.8);
+            position: absolute; inset: 0; background: rgba(253, 251, 247, 0.85);
             backdrop-filter: blur(4px); z-index: 50; display: flex; justify-content: center; align-items: center;
         }
 
         .touch-btn {
             background: #ffffff; border: 4px solid #000; box-shadow: 4px 4px 0px #000;
             border-radius: 10px 25px 15px 20px; touch-action: manipulation; color: #000;
+            cursor: pointer;
         }
         .touch-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
 
@@ -117,8 +119,8 @@
                 <div class="font-fredoka text-2xl text-black underline mb-1">🎮 Controls</div>
                 <p>• WASD / Arrows : Roll</p>
                 <p>• Spacebar : Jump</p>
-                <p>• Shift : Boost</p>
-                <p>• Red Pads = BIG JUMP!</p>
+                <p>• Shift : Boost Speed</p>
+                <p>• Red Pads = BIG LAUNCH!</p>
             </div>
 
             <!-- Mobile Touch Controls -->
@@ -153,8 +155,6 @@
                 <button id="multiplayer-menu-btn" class="btn-action w-full py-3 bg-purple-300 text-black font-fredoka text-xl">🤝 CO-OP MULTIPLAYER</button>
                 <button id="open-shop-btn" class="btn-action w-full py-3 bg-pink-300 text-black font-fredoka text-xl mt-2">🛒 OPEN DOODLE SHOP</button>
             </div>
-            
-            <button id="continue-btn" class="btn-action w-full py-3 bg-yellow-300 text-black font-fredoka text-xl hidden mt-2">CONTINUE CLIMBING</button>
         </div>
 
         <!-- Multiplayer Card -->
@@ -210,7 +210,7 @@
         
         // Game Entities arrays
         let islands = [], crystals = [], jumpPads = [], movingPlatforms = [];
-        let coffeePuddles = [], thumbtacks = [], airplanes = [], windCurrents = [], secretLetters = [];
+        let coffeePuddles = [], thumbtacks = [], airplanes = [], windCurrents = [], secretLetters = [], checkpoints = [];
         let trailPositions = [], trailLine = null;
         let portal, portalRing;
 
@@ -218,16 +218,24 @@
         let clock = new THREE.Clock();
         let gameActive = false;
         let score = 0, crystalsCollected = 0, TOTAL_CRYSTALS = 0;
-        let startTime = 0, elapsedTime = 0, lastPadHitTime = 0, saveInterval = null, toastTimeout = null;
+        let startTime = 0, elapsedTime = 0, lastPadHitTime = 0, toastTimeout = null;
         let isHardcore = false, lastCheckpoint = { x: 0, y: 5, z: 0 };
         let collectedLetters = [];
         const DOODLE_WORD = "DOODLE";
 
-        // Physics & Controls
+        // Physics & Controls State
         let keys = { forward: false, backward: false, left: false, right: false, jump: false, boost: false };
         let velocity = new THREE.Vector3();
-        let isGrounded = false, jumpsLeft = 2, canJump = true;
-        const GRAVITY = 38;
+        let isGrounded = false, jumpsLeft = 2;
+        const GRAVITY = 42;
+        const BALL_RADIUS = 1.2;
+        
+        // Physics Modifiers & Juiciness
+        let coyoteTimer = 0;          
+        let jumpBufferTimer = 0;      
+        let ballSquish = new THREE.Vector3(1, 1, 1); 
+        let particleSystem = [];       
+        let currentRollAngle = new THREE.Matrix4(); 
 
         // Audio
         let chimeSynth, bounceSynth, padSynth, audioStarted = false;
@@ -251,22 +259,187 @@
         // Multiplayer P2P
         let peer = null, conn = null, isMultiplayer = false, player2 = null, isHost = false;
 
-        // --- HELPER FUNCTIONS ---
         function addSketchOutline(mesh, thickness = 2) {
             const edges = new THREE.EdgesGeometry(mesh.geometry);
             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: thickness }));
             mesh.add(line);
         }
 
-        // --- INITIALIZATION ---
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.innerText = msg;
+            toast.style.opacity = '1';
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+        }
+
+        function updateLettersUI() {
+            let text = "";
+            for (let i = 0; i < DOODLE_WORD.length; i++) {
+                const char = DOODLE_WORD[i];
+                text += collectedLetters.includes(char) ? char : "_";
+            }
+            const el = document.getElementById('doodle-letters');
+            if (el) el.innerText = text;
+        }
+
+        function loadProfile() {
+            try {
+                const saved = localStorage.getItem('skyRealmProfile');
+                if (saved) {
+                    const data = JSON.parse(saved);
+                    coins = data.coins || 0;
+                    if (data.unlocks) unlocks = { ...unlocks, ...data.unlocks };
+                }
+            } catch (e) { console.error(e); }
+            document.getElementById('coins').innerText = coins;
+        }
+
+        function saveProfile() {
+            try {
+                localStorage.setItem('skyRealmProfile', JSON.stringify({ coins, unlocks }));
+            } catch (e) { console.error(e); }
+        }
+
+        function respawnPlayer() {
+            if (isHardcore) {
+                showToast("GAME OVER! (Hardcore Permadeath)");
+                gameActive = false;
+                setTimeout(() => {
+                    document.getElementById('hud').style.display = 'none';
+                    document.getElementById('overlay').style.display = 'flex';
+                    document.getElementById('start-card').classList.remove('hidden');
+                }, 1500);
+                return;
+            }
+            player.position.set(lastCheckpoint.x, lastCheckpoint.y, lastCheckpoint.z);
+            velocity.set(0, 0, 0);
+            ballSquish.set(1, 1, 1);
+            currentRollAngle.identity();
+            player.rotation.set(0, 0, 0);
+            createDustBurst(player.position.x, player.position.y, player.position.z, 10, 0xff3333);
+            showToast("Respawned at Checkpoint!");
+        }
+
+        function renderShop() {
+            document.getElementById('shop-coins-display').innerText = coins;
+            const container = document.getElementById('shop-items-container');
+            container.innerHTML = '';
+            
+            shopItems.forEach(item => {
+                const div = document.createElement('div');
+                div.className = `flex justify-between items-center p-3 border-2 border-black rounded-xl ${item.colorClass} text-black font-bold`;
+                
+                let isEquipped = false;
+                let isOwned = unlocks.ownedItems.includes(item.id);
+                
+                if (item.type === 'color') isEquipped = unlocks.color === item.value;
+                if (item.type === 'maxJumps') isEquipped = unlocks.maxJumps === item.value;
+                if (item.type === 'magnet') isEquipped = unlocks.magnet === item.value;
+                if (item.type === 'trail') isEquipped = unlocks.trail === item.value;
+                if (item.type === 'skin') isEquipped = unlocks.skin === item.value;
+
+                let btnText = `Buy (🪙 ${item.cost})`;
+                if (isEquipped) btnText = 'Equipped ✨';
+                else if (isOwned) btnText = 'Equip 👕';
+
+                div.innerHTML = `
+                    <span>${item.name}</span>
+                    <button class="btn-action px-3 py-1 bg-white text-sm font-fredoka">${btnText}</button>
+                `;
+
+                const btn = div.querySelector('button');
+                btn.onclick = () => {
+                    if (isOwned || isEquipped) {
+                        equipItem(item);
+                    } else if (coins >= item.cost) {
+                        coins -= item.cost;
+                        unlocks.ownedItems.push(item.id);
+                        equipItem(item);
+                        saveProfile();
+                    } else {
+                        showToast("Not enough coins!");
+                    }
+                    renderShop();
+                };
+                container.appendChild(div);
+            });
+        }
+
+        function equipItem(item) {
+            if (item.type === 'color') { unlocks.color = item.value; createPlayer(); }
+            if (item.type === 'maxJumps') unlocks.maxJumps = item.value;
+            if (item.type === 'magnet') unlocks.magnet = item.value;
+            if (item.type === 'trail') { unlocks.trail = item.value; createPlayer(); }
+            if (item.type === 'skin') { unlocks.skin = item.value; createPlayer(); }
+            saveProfile();
+        }
+
+        function startNewGame(hardcore) {
+            isHardcore = hardcore;
+            score = 0;
+            crystalsCollected = 0;
+            collectedLetters = [];
+            elapsedTime = 0;
+            startTime = Date.now();
+            lastCheckpoint = { x: 0, y: 5, z: 0 };
+            
+            player.position.set(0, 5, 0);
+            velocity.set(0, 0, 0);
+            
+            crystals.forEach(c => { c.collected = false; scene.add(c.mesh); });
+            secretLetters.forEach(l => { l.collected = false; scene.add(l.mesh); });
+            checkpoints.forEach((cp, idx) => {
+                cp.active = (idx === 0);
+                if (cp.flagMesh) cp.flagMesh.material.color.setHex(cp.active ? 0x2ecc71 : 0xe74c3c);
+            });
+            
+            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
+            document.getElementById('score').innerText = score;
+            document.getElementById('coins').innerText = coins;
+            updateLettersUI();
+            
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('hud').style.display = 'flex';
+            initAudio();
+            gameActive = true;
+            clock.start();
+        }
+
+        function setupMultiplayerEvents() {
+            if (!conn) return;
+            conn.on('data', data => {
+                if (data.type === 'sync' && player2) {
+                    player2.position.set(data.x, data.y, data.z);
+                    player2.rotation.set(data.rx, data.ry, data.rz);
+                } else if (data.type === 'collect_crystal') {
+                    if (crystals[data.index] && !crystals[data.index].collected) {
+                        crystals[data.index].collected = true;
+                        scene.remove(crystals[data.index].mesh);
+                    }
+                }
+            });
+        }
+
+        function sendSync() {
+            if (isMultiplayer && conn && conn.open && player) {
+                conn.send({
+                    type: 'sync',
+                    x: player.position.x, y: player.position.y, z: player.position.z,
+                    rx: player.rotation.x, ry: player.rotation.y, rz: player.rotation.z
+                });
+            }
+        }
+
         function initScene() {
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0xffffff, 0.003); // Fades to paper color
+            scene.fog = new THREE.FogExp2(0xffffff, 0.003);
             
             camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1500);
             
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-            renderer.setClearColor(0x000000, 0); // Transparent to show CSS bg
+            renderer.setClearColor(0x000000, 0);
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
@@ -337,7 +510,6 @@
                 scene.add(shadowMesh);
             }
 
-            // Trails
             if (trailLine) scene.remove(trailLine);
             if (unlocks.trail === 'rainbow') {
                 const trailMat = new THREE.LineBasicMaterial({ color: 0xffaaff, linewidth: 4 });
@@ -353,11 +525,10 @@
             const p2Mat = new THREE.MeshToonMaterial({ color: 0x3498db, transparent: true, opacity: 0.7 });
             player2 = new THREE.Mesh(p2Geo, p2Mat);
             player2.castShadow = true;
-            player2.position.set(0, -100, 0); // Hide until sync
+            player2.position.set(0, -100, 0);
             scene.add(player2);
         }
 
-        // --- LEVEL BUILDING FUNCTIONS ---
         function createBlock(x, y, z, width, height, depth, color = 0x2ecc71, isSticky = false, isRuler = false) {
             const group = new THREE.Group();
             group.position.set(x, y, z);
@@ -371,7 +542,7 @@
             islands.push({
                 type: 'block', cx: x, cz: z, mesh: group,
                 minX: x - width/2, maxX: x + width/2, minZ: z - depth/2, maxZ: z + depth/2,
-                topY: y + height/2, isSticky: isSticky, isRuler: isRuler, startX: x, startZ: z, initialTopY: y + height/2
+                topY: y + height/2, isSticky: isSticky, isRuler: isRuler
             });
             return group;
         }
@@ -473,10 +644,9 @@
         function createMovingPlatform(startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed = 1.0) {
             const pMesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, depth), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
             pMesh.receiveShadow = true; pMesh.castShadow = true; addSketchOutline(pMesh); scene.add(pMesh);
-            movingPlatforms.push({ mesh: pMesh, startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed });
+            movingPlatforms.push({ mesh: pMesh, startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed, deltaPos: new THREE.Vector3() });
         }
 
-        // --- HAZARDS & COLLECTIBLES ---
         function addCoffee(x, y, z, r=3) {
             const pMesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0x4a3728 }));
             pMesh.position.set(x, y, z); scene.add(pMesh);
@@ -492,16 +662,111 @@
             wMesh.position.set(x, y + h/2, z); scene.add(wMesh);
             windCurrents.push({ x, y, z, r: 4, h });
         }
-        function addAirplane(x, y, z) {
-            const aMesh = new THREE.Mesh(new THREE.TetrahedronGeometry(2), new THREE.MeshToonMaterial({ color: 0xffffff }));
-            aMesh.position.set(x, y, z); scene.add(aMesh); addSketchOutline(aMesh);
-            airplanes.push({ mesh: aMesh, startX: x, speed: 0.05 + Math.random() * 0.05 });
+
+        function createPaperAirplaneGeometry() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = new Float32Array([
+                // Left Wing Top Flap
+                0, 0, 3.2,     -4.2, 0.6, -2.5,   0, 0.25, -2.5,
+                // Right Wing Top Flap
+                0, 0, 3.2,      0, 0.25, -2.5,    4.2, 0.6, -2.5,
+                // Left Keel Fold Side
+                0, 0, 3.2,      0, 0.25, -2.5,    0, -1.1, -1.8,
+                // Right Keel Fold Side
+                0, 0, 3.2,      0, -1.1, -1.8,    0, 0.25, -2.5,
+                // Left Under-Wing Slant
+                0, 0, 3.2,     -4.2, 0.6, -2.5,   0, -1.1, -1.8,
+                // Right Under-Wing Slant
+                0, 0, 3.2,      0, -1.1, -1.8,    4.2, 0.6, -2.5
+            ]);
+            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+            geometry.computeVertexNormals();
+            return geometry;
         }
+
+        function addAirplane(x, y, z) {
+            if (!window.paperPlaneGeo) {
+                window.paperPlaneGeo = createPaperAirplaneGeometry();
+            }
+            const aMesh = new THREE.Mesh(window.paperPlaneGeo, new THREE.MeshToonMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+            aMesh.position.set(x, y, z);
+            scene.add(aMesh);
+            addSketchOutline(aMesh);
+            airplanes.push({ 
+                mesh: aMesh, 
+                startX: x, 
+                startY: y, 
+                startZ: z, 
+                speed: 0.8 + Math.random() * 0.4, 
+                phase: Math.random() * Math.PI * 2 
+            });
+        }
+
+        function createLetterTexture(char) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ff9900';
+            ctx.fillRect(0, 0, 128, 128);
+            ctx.lineWidth = 8;
+            ctx.strokeStyle = '#000000';
+            ctx.strokeRect(4, 4, 120, 120);
+            ctx.font = 'bold 85px "Patrick Hand", cursive, sans-serif';
+            ctx.fillStyle = '#000000';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(char, 64, 66);
+            return new THREE.CanvasTexture(canvas);
+        }
+
         function spawnSecretLetter(char, x, y, z) {
-            const lMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshToonMaterial({ color: 0xff9900 }));
+            const tex = createLetterTexture(char);
+            const mat = new THREE.MeshToonMaterial({ map: tex });
+            const lMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), mat);
             lMesh.position.set(x, y, z); scene.add(lMesh); addSketchOutline(lMesh);
             secretLetters.push({ char, mesh: lMesh, collected: false });
         }
+
+        function createCheckpoint(x, y, z, label = "Checkpoint") {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+
+            // Flagpole
+            const poleGeo = new THREE.CylinderGeometry(0.2, 0.2, 7, 8);
+            const poleMat = new THREE.MeshToonMaterial({ color: 0x333333 });
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            pole.position.y = 3.5;
+            addSketchOutline(pole);
+            group.add(pole);
+
+            // Animated Banner/Flag
+            const flagGeo = new THREE.BoxGeometry(2.5, 1.5, 0.2);
+            const flagMat = new THREE.MeshToonMaterial({ color: 0xe74c3c });
+            const flag = new THREE.Mesh(flagGeo, flagMat);
+            flag.position.set(1.25, 6, 0);
+            addSketchOutline(flag);
+            group.add(flag);
+
+            // Base Ring Pad
+            const padGeo = new THREE.CylinderGeometry(3, 3.2, 0.3, 12);
+            const padMat = new THREE.MeshToonMaterial({ color: 0x34495e });
+            const pad = new THREE.Mesh(padGeo, padMat);
+            pad.position.y = 0.15;
+            addSketchOutline(pad);
+            group.add(pad);
+
+            scene.add(group);
+
+            checkpoints.push({
+                x, y: y + 2, z,
+                label,
+                active: false,
+                flagMesh: flag,
+                group
+            });
+        }
+
         function spawnCrystals(cx, cy, cz, count, layout='circle', radius=6) {
             for (let i = 0; i < count; i++) {
                 const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.85, 0), new THREE.MeshToonMaterial({ color: 0xffea00 }));
@@ -519,35 +784,41 @@
             }
         }
 
-        // --- LEVEL GENERATION ---
         function createWorld() {
             // Phase 1: Hub Base (Y: 0)
             createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
+            createCheckpoint(0, 1, 0, "Start Pad");
+            if (checkpoints.length > 0) {
+                checkpoints[0].active = true;
+                if (checkpoints[0].flagMesh) checkpoints[0].flagMesh.material.color.setHex(0x2ecc71);
+            }
             spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
             spawnSecretLetter("D", -10, 3, -10);
 
             // Phase 2: Sky Steps (Y: 7 - 21)
             createEraser(0, 7, -30, 14, true); 
             createTire(15, 14, -50, 5); 
-            addCoffee(15, 15.1, -50, 4); // Ice physics hazard!
+            addCoffee(15, 15.1, -50, 4);
             spawnCrystals(15, 16.5, -50, 1, 'x'); 
             createBlock(-15, 21, -70, 8, 2, 8, 0x3498db); 
             createJumpPad(-15, 22.1, -70, 0, 68, -35);
 
             // Phase 3: The Floating Atolls (Y: 65 - 85)
             createBlock(-15, 65, -120, 20, 2, 20, 0x9b59b6);
+            createCheckpoint(-15, 67, -120, "Atoll Overlook");
+            spawnCrystals(-12, 67, -120, 2, 'x');
             spawnSecretLetter("O", -20, 68, -125);
             createMovingPlatform(-15, 65, -135, 15, 75, -160, 8, 2, 8, 1.0);
             createTire(15, 75, -175, 6); 
             spawnCrystals(15, 77.5, -175, 1, 'x');
             createMovingPlatform(15, 75, -190, -20, 85, -220, 6, 2, 6, 1.3);
             createPencil(-20, 85, -235, 20, true); 
-            addTack(-20, 87.5, -240); // Instant death hazard
+            addTack(-20, 87.5, -240);
             
             // Phase 4: The Ring Ascent (Y: 85 - 130)
             createJumpPad(-20, 87.5, -235, 25, 50, -25); 
             createRing(0, 115, -255);
-            addAirplane(0, 118, -255); // Moving hazard
+            addAirplane(0, 118, -255);
             createRing(10, 125, -270);
             
             // Phase 5: The Shredder (Y: 135 - 220)
@@ -555,25 +826,28 @@
             spawnSecretLetter("O", 20, 138, -290);
             createMovingPlatform(20, 135, -305, -10, 150, -330, 5, 2, 5, 1.0); 
             
-            createBlock(-10, 150, -345, 6, 2, 6, 0xf1c40f, true); // STICKY NOTE - Falls!
+            createBlock(-10, 150, -345, 6, 2, 6, 0xf1c40f, true);
+            spawnCrystals(-10, 152, -345, 1, 'x');
             createPencil(15, 165, -385, 12, false); 
             createMovingPlatform(15, 165, -400, 15, 195, -400, 5, 2, 5, 1.2); 
             createTire(15, 195, -415, 3.5); 
-            createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true); // RULER - Moves X!
+            createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true);
             
             // Phase 6: The Rest Stop (Checkpoint Y: 220)
             createBlock(-15, 220, -475, 25, 4, 25, 0x2ecc71);
+            createCheckpoint(-15, 222, -475, "Midway Rest Stop");
             spawnCrystals(-15, 222.8, -475, 4, 'circle', 8);
             spawnSecretLetter("D", -10, 223, -480);
             
             // Phase 7: The Bouncy Castle (Y: 230 - 320)
             createJumpPad(-15, 222.1, -475, 0, 55, -35); 
             createTire(-15, 250, -510, 6);
-            addWind(-15, 253, -520, 30); // Updraft
+            addWind(-15, 253, -520, 30);
             createJumpPad(-15, 252.5, -510, 35, 50, -20);
             createTire(20, 280, -530, 6);
             createJumpPad(20, 282.5, -530, -35, 60, -30);
             createBlock(-15, 320, -560, 16, 2, 16, 0x3498db); 
+            createCheckpoint(-15, 322, -560, "Bouncy Peak");
 
             // Phase 8: The High Pencil Bridge (Y: 320 - 450)
             createMovingPlatform(-15, 320, -575, -15, 335, -590, 6, 2, 6, 1.5);
@@ -583,8 +857,10 @@
             createPencil(0, 350, -640, 25, false);
             
             createBlock(0, 350, -660, 8, 2, 8, 0x9b59b6);
+            spawnCrystals(0, 352, -660, 1, 'x');
             createMovingPlatform(0, 350, -670, 0, 410, -670, 6, 2, 6, 1.2);
             createBlock(0, 410, -685, 12, 2, 12, 0xe67e22);
+            createCheckpoint(0, 412, -685, "Pencil Summit");
 
             // Phase 9: The Eraser Gauntlet (Y: 410 - 520)
             createJumpPad(0, 411.1, -685, 45, 65, 0); 
@@ -598,6 +874,7 @@
             
             // Phase 10: TRUE ZENITH (Y: 530)
             createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
+            createCheckpoint(-25, 532, -810, "Summit Checkpoint");
             spawnCrystals(-15, 532.8, -810, 6, 'circle', 10);
             spawnSecretLetter("E", -20, 533, -805);
 
@@ -612,7 +889,6 @@
             updateLettersUI();
         }
 
-        // --- AUDIO ---
         function initAudio() {
             if (audioStarted) return;
             Tone.start(); audioStarted = true;
@@ -628,7 +904,6 @@
         function playJumpSound() { if(audioStarted) bounceSynth.triggerAttackRelease("C2", "8n"); }
         function playPadSound() { if(audioStarted) padSynth.triggerAttackRelease("G4", "8n"); }
 
-        // --- CONTROLS ---
         function setupControls() {
             window.addEventListener('keydown', (e) => {
                 switch (e.code) {
@@ -638,8 +913,9 @@
                     case 'KeyD': case 'ArrowRight': keys.right = true; break;
                     case 'ShiftLeft': case 'ShiftRight': keys.boost = true; break;
                     case 'Space':
-                        if (canJump && jumpsLeft > 0 && gameActive) {
-                            velocity.y = 20; jumpsLeft--; canJump = false; playJumpSound();
+                        if (!e.repeat) {
+                            jumpBufferTimer = 0.15;
+                            triggerJumpIfPossible();
                         }
                         break;
                 }
@@ -651,7 +927,11 @@
                     case 'KeyA': case 'ArrowLeft': keys.left = false; break;
                     case 'KeyD': case 'ArrowRight': keys.right = false; break;
                     case 'ShiftLeft': case 'ShiftRight': keys.boost = false; break;
-                    case 'Space': canJump = true; break;
+                    case 'Space':
+                        if (velocity.y > 5) {
+                            velocity.y *= 0.45;
+                        }
+                        break;
                 }
             });
 
@@ -667,7 +947,8 @@
             if (jumpBtn) {
                 jumpBtn.addEventListener('touchstart', (e) => {
                     e.preventDefault();
-                    if (jumpsLeft > 0 && gameActive) { velocity.y = 20; jumpsLeft--; playJumpSound(); }
+                    jumpBufferTimer = 0.15;
+                    triggerJumpIfPossible();
                 });
             }
             window.addEventListener('resize', () => {
@@ -677,389 +958,516 @@
             });
         }
 
-        // --- UI & SHOP ---
-        function showToast(msg, duration=3000) {
-            const t = document.getElementById('toast');
-            t.innerText = msg; t.style.opacity = '1';
-            if (toastTimeout) clearTimeout(toastTimeout);
-            toastTimeout = setTimeout(() => { t.style.opacity = '0'; }, duration);
-        }
-
-        function updateLettersUI() {
-            let display = "";
-            for (let i = 0; i < DOODLE_WORD.length; i++) display += collectedLetters.includes(DOODLE_WORD[i]) ? DOODLE_WORD[i] : "_";
-            document.getElementById('doodle-letters').innerText = display;
-            if (collectedLetters.length === DOODLE_WORD.length && !unlocks.ownedItems.includes('doodle_bonus')) {
-                coins += 5000; unlocks.ownedItems.push('doodle_bonus'); saveProfile();
-                showToast("🎉 FOUND ALL LETTERS! +5000 COINS! 🎉");
-                document.getElementById('coins').innerText = coins;
+        function triggerJumpIfPossible() {
+            if (!gameActive) return;
+            if (isGrounded || coyoteTimer > 0) {
+                executeJump(24, true);
+            } else if (jumpsLeft > 0) {
+                executeJump(21, false);
             }
         }
 
-        function loadProfile() {
-            const saved = localStorage.getItem('skyRealmProfile');
-            if (saved) {
-                const state = JSON.parse(saved);
-                coins = state.coins || 0;
-                if (state.unlocks) {
-                    unlocks.color = state.unlocks.color || 0xff3366;
-                    unlocks.skin = state.unlocks.skin || 'normal';
-                    unlocks.trail = state.unlocks.trail || 'none';
-                    unlocks.magnet = state.unlocks.magnet || false;
-                    unlocks.maxJumps = state.unlocks.maxJumps || 2;
-                    unlocks.ownedItems = state.unlocks.ownedItems || [];
-                }
-            }
-            document.getElementById('coins').innerText = coins;
-        }
-
-        function saveProfile() { localStorage.setItem('skyRealmProfile', JSON.stringify({ coins, unlocks })); }
-
-        function renderShop() {
-            document.getElementById('shop-coins-display').innerText = coins;
-            const container = document.getElementById('shop-items-container');
-            container.innerHTML = '';
-            
-            shopItems.forEach(item => {
-                const isOwned = unlocks.ownedItems.includes(item.id);
-                let isEquipped = false;
-                if (item.type === 'color' && unlocks.color === item.value) isEquipped = true;
-                if (item.type === 'maxJumps' && unlocks.maxJumps === item.value) isEquipped = true;
-                if (item.type === 'magnet' && unlocks.magnet === item.value) isEquipped = true;
-                if (item.type === 'trail' && unlocks.trail === item.value) isEquipped = true;
-                if (item.type === 'skin' && unlocks.skin === item.value) isEquipped = true;
-
-                let rightSide = isEquipped ? `<span>✅ EQUIPPED</span>` : (isOwned ? `<span>EQUIP</span>` : `<span>🪙 ${item.cost}</span>`);
-                const btn = document.createElement('button');
-                btn.className = `btn-action w-full py-2 ${item.colorClass} text-black font-fredoka text-lg flex justify-between px-4 items-center mb-3`;
-                btn.innerHTML = `<span>${item.name}</span> ${rightSide}`;
-                
-                btn.onclick = () => {
-                    if (isOwned && !isEquipped) {
-                        equipItem(item.type, item.value); renderShop(); showToast(`Equipped ${item.name}!`);
-                    } else if (!isOwned && coins >= item.cost) {
-                        coins -= item.cost; unlocks.ownedItems.push(item.id); equipItem(item.type, item.value);
-                        saveProfile(); renderShop(); showToast(`Bought ${item.name}!`);
-                        document.getElementById('coins').innerText = coins;
-                    } else if (!isOwned) {
-                        showToast("Not enough coins! Collect crystals!");
-                    }
-                };
-                container.appendChild(btn);
-            });
-        }
-
-        function equipItem(type, value) {
-            if (type === 'color') { unlocks.color = value; if (player) player.material.color.setHex(value); } 
-            else if (type === 'maxJumps') unlocks.maxJumps = value;
-            else if (type === 'magnet') unlocks.magnet = value;
-            else if (type === 'trail') { unlocks.trail = value; createPlayer(); } 
-            else if (type === 'skin') { unlocks.skin = value; createPlayer(); }
-            saveProfile();
-        }
-
-        // --- MULTIPLAYER ---
-        function setupMultiplayerEvents() {
-            conn.on('data', (data) => {
-                if (data.type === 'sync' && player2) {
-                    player2.position.set(data.p.x, data.p.y, data.p.z);
-                    if (player2.material.color.getHex() !== data.c) player2.material.color.setHex(data.c);
-                }
-                if (data.type === 'collect_crystal') {
-                    const c = crystals[data.index];
-                    if (c && !c.collected) {
-                        c.collected = true; scene.remove(c.mesh); crystalsCollected++;
-                        document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
-                    }
-                }
-                if (data.type === 'collect_letter') {
-                    if (!collectedLetters.includes(data.char)) { collectedLetters.push(data.char); updateLettersUI(); }
-                    const l = secretLetters.find(sl => sl.char === data.char);
-                    if (l && !l.collected) { l.collected = true; scene.remove(l.mesh); }
-                }
-            });
-            conn.on('close', () => { showToast("Player 2 Disconnected"); isMultiplayer = false; });
-        }
-
-        function sendSync() {
-            if (!isMultiplayer || !conn || !conn.open) return;
-            conn.send({ type: 'sync', p: { x: player.position.x, y: player.position.y, z: player.position.z }, c: unlocks.color });
-        }
-
-        // --- GAME LOOP & STATE ---
-        function resetWorld() {
-            player.position.set(0, 5, 0); velocity.set(0, 0, 0); jumpsLeft = unlocks.maxJumps;
-            score = 0; crystalsCollected = 0; collectedLetters = []; startTime = Date.now(); lastCheckpoint = { x: 0, y: 5, z: 0 };
-            
-            crystals.forEach(c => { if(c.collected) { c.collected = false; scene.add(c.mesh); } });
-            secretLetters.forEach(l => { if(l.collected) { l.collected = false; scene.add(l.mesh); } });
-            islands.forEach(isl => {
-                if(isl.isSticky) { isl.falling = false; isl.touchTime = null; isl.mesh.position.y = isl.initialTopY - 1; isl.topY = isl.initialTopY; }
-            });
-            
-            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
-            document.getElementById('score').innerText = '0';
-            updateLettersUI();
-            trailPositions = []; if(trailLine) trailLine.geometry.setPositions([]);
-        }
-
-        function startNewGame(hardcoreMode) {
-            isHardcore = hardcoreMode;
-            initAudio();
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('hud').style.display = 'flex';
-            resetWorld();
-            gameActive = true;
-            if (saveInterval) clearInterval(saveInterval);
-            saveInterval = setInterval(() => {
-                if (!gameActive) return;
-                localStorage.setItem('skyRealmSave', JSON.stringify({
-                    px: player.position.x, py: player.position.y, pz: player.position.z,
-                    vx: velocity.x, vy: velocity.y, vz: velocity.z,
-                    score, crystalsCollected, elapsedTime, isHardcore, lastCheckpoint,
-                    crystalStates: crystals.map(c => c.collected),
-                    lettersCollected: collectedLetters
-                }));
-            }, 1000);
-            showToast(`${isHardcore ? 'Hardcore' : 'Normal'} Mode Started!`);
-        }
-        
-        function continueGame() {
-            initAudio(); document.getElementById('overlay').style.display = 'none'; document.getElementById('hud').style.display = 'flex';
-            const saved = localStorage.getItem('skyRealmSave');
-            if (saved) {
-                const s = JSON.parse(saved);
-                isHardcore = s.isHardcore || false; lastCheckpoint = s.lastCheckpoint || { x: 0, y: 5, z: 0 };
-                player.position.set(s.px, s.py, s.pz); velocity.set(s.vx, s.vy, s.vz);
-                score = s.score; crystalsCollected = s.crystalsCollected; startTime = Date.now() - (s.elapsedTime * 1000);
-                collectedLetters = s.lettersCollected || [];
-                s.crystalStates.forEach((col, i) => { if (col && crystals[i]) { crystals[i].collected = true; scene.remove(crystals[i].mesh); } });
-                secretLetters.forEach(l => { if(collectedLetters.includes(l.char)) { l.collected=true; scene.remove(l.mesh); } });
-            } else resetWorld();
-            gameActive = true;
-            document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
-            document.getElementById('score').innerText = score; updateLettersUI();
-            if (saveInterval) clearInterval(saveInterval);
-            saveInterval = setInterval(() => { /* Same save logic */ }, 1000);
-            showToast(`Loaded ${isHardcore ? 'Hardcore' : 'Normal'} Save`);
-        }
-
-        function respawnPlayer() {
-            if (isHardcore) {
-                resetWorld(); localStorage.removeItem('skyRealmSave'); showToast("💀 YOU DIED! Hardcore reset.");
+        function executeJump(jumpForce, isFirstJump) {
+            velocity.y = jumpForce;
+            if (isFirstJump) {
+                jumpsLeft = unlocks.maxJumps - 1;
+                coyoteTimer = 0;
             } else {
-                player.position.set(lastCheckpoint.x, lastCheckpoint.y, lastCheckpoint.z); velocity.set(0, 0, 0);
-                jumpsLeft = unlocks.maxJumps; score = Math.max(0, score - 50); 
-                document.getElementById('score').innerText = score; showToast("↩️ You fell! Respawned at checkpoint.");
+                jumpsLeft--;
+            }
+            jumpBufferTimer = 0;
+            
+            ballSquish.set(0.75, 1.35, 0.75);
+            createDustBurst(player.position.x, player.position.y - BALL_RADIUS, player.position.z, 8);
+            playJumpSound();
+        }
+
+        function createDustBurst(x, y, z, count = 6, color = 0xdddddd) {
+            for (let i = 0; i < count; i++) {
+                const pGeo = new THREE.DodecahedronGeometry(0.25 + Math.random() * 0.2, 0);
+                const pMat = new THREE.MeshToonMaterial({ color: color, transparent: true, opacity: 0.8 });
+                const pMesh = new THREE.Mesh(pGeo, pMat);
+                pMesh.position.set(x + (Math.random()-0.5)*0.8, y, z + (Math.random()-0.5)*0.8);
+                scene.add(pMesh);
+
+                particleSystem.push({
+                    mesh: pMesh,
+                    vel: new THREE.Vector3((Math.random()-0.5)*8, 2 + Math.random()*5, (Math.random()-0.5)*8),
+                    life: 1.0,
+                    decay: 2.5 + Math.random() * 1.5
+                });
+            }
+        }
+
+        function updateParticles(delta) {
+            for (let i = particleSystem.length - 1; i >= 0; i--) {
+                const p = particleSystem[i];
+                p.life -= p.decay * delta;
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particleSystem.splice(i, 1);
+                } else {
+                    p.mesh.position.addScaledVector(p.vel, delta);
+                    p.mesh.scale.setScalar(p.life);
+                    p.mesh.material.opacity = p.life * 0.8;
+                }
             }
         }
 
         function updatePhysics(delta) {
             const now = Date.now();
-            
-            // Camera relative input
+
+            if (coyoteTimer > 0) coyoteTimer -= delta;
+            if (jumpBufferTimer > 0) {
+                jumpBufferTimer -= delta;
+                triggerJumpIfPossible();
+            }
+
+            ballSquish.x += (1 - ballSquish.x) * 12 * delta;
+            ballSquish.y += (1 - ballSquish.y) * 12 * delta;
+            ballSquish.z += (1 - ballSquish.z) * 12 * delta;
+            if (player) player.scale.copy(ballSquish);
+
             const camF = new THREE.Vector3(); camera.getWorldDirection(camF); camF.y = 0; camF.normalize();
             const camR = new THREE.Vector3(); camR.crossVectors(camF, new THREE.Vector3(0, 1, 0)).normalize();
             let iF = 0, iR = 0;
             if (keys.forward) iF += 1; if (keys.backward) iF -= 1;
             if (keys.left) iR -= 1; if (keys.right) iR += 1;
             
-            const iDir = new THREE.Vector3(); iDir.addScaledVector(camF, iF); iDir.addScaledVector(camR, iR);
-            if (iDir.length() > 0) {
-                iDir.normalize(); const accel = keys.boost ? 70 : 45;
-                velocity.x += iDir.x * accel * delta; velocity.z += iDir.z * accel * delta;
+            const inputDir = new THREE.Vector3();
+            inputDir.addScaledVector(camF, iF).addScaledVector(camR, iR);
+            if (inputDir.lengthSq() > 0) inputDir.normalize();
+
+            const topSpeed = keys.boost ? 28 : 18;
+            if (isGrounded) {
+                // Acceleration tuned for a satisfying feeling of mass
+                const accel = keys.boost ? 70 : 50;
+                velocity.x += inputDir.x * accel * delta;
+                velocity.z += inputDir.z * accel * delta;
+
+                // Reduced friction so the ball coasts smooth with natural weight/inertia
+                let friction = 3.8;
+                for (let cof of coffeePuddles) {
+                    if (Math.abs(player.position.x - cof.x) < cof.r && Math.abs(player.position.z - cof.z) < cof.r) {
+                        friction = 0.8;
+                    }
+                }
+                
+                if (inputDir.lengthSq() === 0 || friction < 2) {
+                    velocity.x -= velocity.x * friction * delta;
+                    velocity.z -= velocity.z * friction * delta;
+                } else {
+                    const currentDir = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
+                    if (currentDir.dot(inputDir) < 0.5) {
+                        velocity.x *= (1 - 3.5 * delta);
+                        velocity.z *= (1 - 3.5 * delta);
+                    }
+                }
+            } else {
+                const airAccel = keys.boost ? 40 : 30;
+                velocity.x += inputDir.x * airAccel * delta;
+                velocity.z += inputDir.z * airAccel * delta;
+                velocity.x *= (1 - 0.8 * delta);
+                velocity.z *= (1 - 0.8 * delta);
             }
 
-            const maxSpd = keys.boost ? 30 : 18;
-            const hSpd = Math.sqrt(velocity.x*velocity.x + velocity.z*velocity.z);
-            if (hSpd > maxSpd) { velocity.x = (velocity.x/hSpd)*maxSpd; velocity.z = (velocity.z/hSpd)*maxSpd; }
+            const hSpd = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+            if (hSpd > topSpeed) {
+                velocity.x = (velocity.x / hSpd) * topSpeed;
+                velocity.z = (velocity.z / hSpd) * topSpeed;
+            }
 
-            // Hazards Friction & Gravity
-            let fric = 0.9;
-            for (let cof of coffeePuddles) if (Math.abs(player.position.x - cof.x) < cof.r && Math.abs(player.position.z - cof.z) < cof.r && Math.abs(player.position.y - cof.y) < 2) fric = 0.99;
-            if (!keys.forward && !keys.backward) velocity.z *= fric;
-            if (!keys.left && !keys.right) velocity.x *= fric;
-            
             velocity.y -= GRAVITY * delta;
-            for (let w of windCurrents) if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) velocity.y += 0.4;
+            for (let w of windCurrents) {
+                if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) {
+                    velocity.y += 45 * delta;
+                }
+            }
 
-            // Thumbtacks
-            for (let t of thumbtacks) if (player.position.distanceTo(new THREE.Vector3(t.x, t.y, t.z)) < t.r) { respawnPlayer(); return; }
+            for (let t of thumbtacks) {
+                if (player.position.distanceTo(new THREE.Vector3(t.x, t.y, t.z)) < t.r + BALL_RADIUS * 0.5) {
+                    respawnPlayer(); return;
+                }
+            }
 
-            const oldBottom = (player.position.y - (velocity.y * delta)) - 1.2;
-            player.position.x += velocity.x * delta; player.position.y += velocity.y * delta; player.position.z += velocity.z * delta;
-            player.rotation.z -= velocity.x * delta * 0.4; player.rotation.x += velocity.z * delta * 0.4;
+            const prevPosY = player.position.y;
+            player.position.x += velocity.x * delta;
+            player.position.y += velocity.y * delta;
+            player.position.z += velocity.z * delta;
 
-            // Airplanes
+            const moveDist = Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z) * delta;
+            if (moveDist > 0.001) {
+                const moveDir = new THREE.Vector3(velocity.x, 0, velocity.z).normalize();
+                const rotAxis = new THREE.Vector3(moveDir.z, 0, -moveDir.x);
+                const rotAngle = moveDist / BALL_RADIUS;
+                
+                const deltaRot = new THREE.Matrix4().makeRotationAxis(rotAxis, rotAngle);
+                currentRollAngle.premultiply(deltaRot);
+                player.rotation.setFromRotationMatrix(currentRollAngle);
+
+                if (isGrounded && hSpd > 12 && Math.random() < 0.35) {
+                    createDustBurst(player.position.x, player.position.y - BALL_RADIUS, player.position.z, 1, 0xcccccc);
+                }
+            }
+
             airplanes.forEach(a => {
-                a.mesh.position.x = a.startX + Math.sin(now * a.speed * 0.01) * 15;
-                a.mesh.rotation.y += 0.05;
-                if (player.position.distanceTo(a.mesh.position) < 2.5) { velocity.x = (player.position.x - a.mesh.position.x); velocity.y = 10; velocity.z = (player.position.z - a.mesh.position.z); }
+                const t = (now * 0.001 * a.speed) + a.phase;
+                const nextX = a.startX + Math.sin(t) * 18;
+                const nextZ = a.startZ + Math.cos(t * 0.7) * 6;
+                const nextY = a.startY + Math.sin(t * 2) * 1.2;
+
+                const dx = nextX - a.mesh.position.x;
+                const dz = nextZ - a.mesh.position.z;
+                if (Math.abs(dx) > 0.001 || Math.abs(dz) > 0.001) {
+                    a.mesh.rotation.y = Math.atan2(dx, dz);
+                    a.mesh.rotation.z = -Math.cos(t) * 0.25; 
+                }
+                
+                a.mesh.position.set(nextX, nextY, nextZ);
+
+                if (player.position.distanceTo(a.mesh.position) < 3.2) {
+                    velocity.x = (player.position.x - a.mesh.position.x) * 12;
+                    velocity.y = 18;
+                    velocity.z = (player.position.z - a.mesh.position.z) * 12;
+                    ballSquish.set(1.3, 0.7, 1.3);
+                }
             });
 
-            // CCD Collisions
-            isGrounded = false; const r = 1.2; let groundY = -999; const cBot = player.position.y - r;
+            isGrounded = false;
 
-            for (let isl of islands) {
-                let inside = false;
-                if (isl.type === 'tire' || isl.type === 'ring') {
-                    const d = Math.sqrt(Math.pow(player.position.x - isl.cx, 2) + Math.pow(player.position.z - isl.cz, 2));
-                    if (d <= isl.outerRadius && d >= isl.innerRadius) inside = true;
-                } else if (player.position.x >= isl.minX - r && player.position.x <= isl.maxX + r && player.position.z >= isl.minZ - r && player.position.z <= isl.maxZ + r) {
-                    inside = true;
-                }
-
-                if (inside) {
-                    groundY = Math.max(groundY, isl.topY);
-                    if (isl.isRuler) isl.mesh.position.x = isl.startX + Math.sin(now * 0.002) * 8; // Ruler motion
-
-                    if ((oldBottom >= isl.topY - 1.0 || cBot >= isl.topY - 1.0) && cBot <= isl.topY + 0.1 && velocity.y <= 0) {
-                        if (isl.isSticky) {
-                            if (!isl.touchTime) isl.touchTime = now;
-                            if (now - isl.touchTime > 1500) isl.falling = true;
+            // Island Collisions
+            islands.forEach(island => {
+                if (velocity.y <= 1.0) {
+                    if (island.type === 'block' || island.type === 'eraser' || island.type === 'pencil') {
+                        if (player.position.x >= island.minX - BALL_RADIUS*0.8 && player.position.x <= island.maxX + BALL_RADIUS*0.8 &&
+                            player.position.z >= island.minZ - BALL_RADIUS*0.8 && player.position.z <= island.maxZ + BALL_RADIUS*0.8) {
+                            
+                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
+                                player.position.y = island.topY + BALL_RADIUS;
+                                velocity.y = 0;
+                                if (!isGrounded && prevPosY - player.position.y > 5) {
+                                    ballSquish.set(1.3, 0.7, 1.3);
+                                }
+                                isGrounded = true;
+                                coyoteTimer = 0.15;
+                                jumpsLeft = unlocks.maxJumps;
+                            }
                         }
-                        player.position.y = isl.topY + r; velocity.y = 0; isGrounded = true; jumpsLeft = unlocks.maxJumps;
-                        if (!isHardcore && !isl.isSticky && !isl.isRuler && isl.type !== 'tire' && isl.type !== 'ring') lastCheckpoint = { x: isl.cx, y: isl.topY + 3, z: isl.cz };
-                        break;
+                    } else if (island.type === 'tire') {
+                        const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
+                        if (dist >= island.innerRadius && dist <= island.outerRadius) {
+                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
+                                player.position.y = island.topY + BALL_RADIUS;
+                                velocity.y = 0;
+                                isGrounded = true;
+                                coyoteTimer = 0.15;
+                                jumpsLeft = unlocks.maxJumps;
+                            }
+                        }
+                    } else if (island.type === 'ring') {
+                        const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
+                        if (dist <= island.outerRadius) {
+                            if (prevPosY >= island.topY + BALL_RADIUS - 0.5 && player.position.y <= island.topY + BALL_RADIUS + 0.5) {
+                                player.position.y = island.topY + BALL_RADIUS;
+                                velocity.y = 0;
+                                isGrounded = true;
+                                coyoteTimer = 0.15;
+                                jumpsLeft = unlocks.maxJumps;
+                            }
+                        }
                     }
                 }
-            }
+            });
 
-            for (let p of movingPlatforms) {
-                if (player.position.x >= p.mesh.position.x - p.width/2 - r && player.position.x <= p.mesh.position.x + p.width/2 + r &&
-                    player.position.z >= p.mesh.position.z - p.depth/2 - r && player.position.z <= p.mesh.position.z + p.depth/2 + r) {
-                    const cTop = p.mesh.position.y + p.thickness/2;
-                    groundY = Math.max(groundY, cTop);
-                    if ((oldBottom >= cTop - 1.0 || cBot >= cTop - 1.0) && cBot <= cTop + 0.1 && velocity.y <= 15) {
-                        player.position.y = cTop + r; velocity.y = 0; isGrounded = true; jumpsLeft = unlocks.maxJumps;
-                        player.position.x += p.deltaX || 0; player.position.y += p.deltaY || 0; player.position.z += p.deltaZ || 0;
-                        break;
+            // Moving Platform Collisions
+            movingPlatforms.forEach(mp => {
+                if (velocity.y <= 1.0) {
+                    const halfW = mp.width / 2;
+                    const halfD = mp.depth / 2;
+                    const topY = mp.mesh.position.y + mp.thickness / 2;
+                    
+                    if (player.position.x >= mp.mesh.position.x - halfW - BALL_RADIUS*0.5 &&
+                        player.position.x <= mp.mesh.position.x + halfW + BALL_RADIUS*0.5 &&
+                        player.position.z >= mp.mesh.position.z - halfD - BALL_RADIUS*0.5 &&
+                        player.position.z <= mp.mesh.position.z + halfD + BALL_RADIUS*0.5) {
+                        
+                        if (prevPosY >= topY + BALL_RADIUS - 0.6 && player.position.y <= topY + BALL_RADIUS + 0.4) {
+                            player.position.y = topY + BALL_RADIUS;
+                            velocity.y = 0;
+                            isGrounded = true;
+                            coyoteTimer = 0.15;
+                            jumpsLeft = unlocks.maxJumps;
+                            if (mp.deltaPos) {
+                                player.position.add(mp.deltaPos);
+                            }
+                        }
                     }
                 }
-            }
+            });
 
-            islands.forEach(isl => { if (isl.isSticky && isl.falling) { isl.mesh.position.y -= 15 * delta; isl.topY = isl.mesh.position.y + 0.5; } });
+            // Jump Pad Collisions
+            jumpPads.forEach(jp => {
+                const dist2D = Math.sqrt(Math.pow(player.position.x - jp.pos.x, 2) + Math.pow(player.position.z - jp.pos.z, 2));
+                if (dist2D < 2.5 && Math.abs(player.position.y - (jp.pos.y + 0.3)) < 1.5) {
+                    if (now - lastPadHitTime > 300) {
+                        lastPadHitTime = now;
+                        velocity.x = jp.launch.x;
+                        velocity.y = jp.launch.y;
+                        velocity.z = jp.launch.z;
+                        ballSquish.set(0.6, 1.5, 0.6);
+                        createDustBurst(player.position.x, player.position.y, player.position.z, 12, 0xff3838);
+                        playPadSound();
+                    }
+                }
+            });
 
-            if (groundY > -500 && player.position.y >= groundY) {
-                shadowMesh.visible = true; shadowMesh.position.set(player.position.x, groundY + 0.05, player.position.z);
-                const scale = Math.max(0.4, 1.2 - (player.position.y - groundY) * 0.03); shadowMesh.scale.set(scale, scale, scale);
-            } else shadowMesh.visible = false;
+            // Checkpoint Detection
+            checkpoints.forEach(cp => {
+                if (!cp.active) {
+                    const dist = Math.sqrt(Math.pow(player.position.x - cp.x, 2) + Math.pow(player.position.z - cp.z, 2));
+                    if (dist < 4.5 && Math.abs(player.position.y - cp.y) < 4.0) {
+                        cp.active = true;
+                        lastCheckpoint = { x: cp.x, y: cp.y, z: cp.z };
+                        if (cp.flagMesh) cp.flagMesh.material.color.setHex(0x2ecc71);
+                        createDustBurst(cp.x, cp.y, cp.z, 16, 0x2ecc71);
+                        playCollectSound();
+                        showToast(`🚩 Checkpoint Reached: ${cp.label}!`);
+                    }
+                }
+            });
 
-            for (let pad of jumpPads) if (now - lastPadHitTime > 250 && player.position.distanceTo(pad.pos) < 2.5 && player.position.y >= pad.pos.y) {
-                velocity.set(pad.launch.x, pad.launch.y, pad.launch.z); jumpsLeft = Math.max(1, unlocks.maxJumps - 1); playPadSound(); lastPadHitTime = now;
-            }
-
-            if (player.position.y < -35) respawnPlayer();
-
-            // Collectibles
-            const mDist = unlocks.magnet ? 6.5 : 2.2;
-            crystals.forEach((c, i) => {
+            // Crystals Pickups
+            crystals.forEach((c, idx) => {
                 if (!c.collected) {
-                    const d = player.position.distanceTo(c.mesh.position);
-                    if (unlocks.magnet && d < mDist && d > 1.5) c.mesh.position.lerp(player.position, 0.1);
-                    if (d < 2.2) {
-                        c.collected = true; scene.remove(c.mesh); crystalsCollected++; score += 100; coins += 100; saveProfile(); playCollectSound();
-                        if (isMultiplayer && conn && conn.open) conn.send({ type: 'collect_crystal', index: i });
+                    c.mesh.rotation.y += delta * 2;
+                    c.mesh.position.y = c.initialY + Math.sin(now * 0.003 + idx) * 0.3;
+                    
+                    if (unlocks.magnet && player.position.distanceTo(c.mesh.position) < 15) {
+                        c.mesh.position.lerp(player.position, delta * 5);
+                    }
+
+                    if (player.position.distanceTo(c.mesh.position) < 2.5) {
+                        c.collected = true;
+                        scene.remove(c.mesh);
+                        crystalsCollected++;
+                        score += 250;
+                        coins += 50;
+                        saveProfile();
                         document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
-                        document.getElementById('score').innerText = score; document.getElementById('coins').innerText = coins;
-                        if (crystalsCollected === TOTAL_CRYSTALS) showToast("Portal Unlocked! Head to the summit portal!");
+                        document.getElementById('score').innerText = score;
+                        document.getElementById('coins').innerText = coins;
+                        playCollectSound();
+                        showToast(`Crystal Collected! (+50 Coins)`);
+
+                        if (isMultiplayer && conn && conn.open) {
+                            conn.send({ type: 'collect_crystal', index: idx });
+                        }
                     }
                 }
             });
 
+            // Secret Letters
             secretLetters.forEach(l => {
-                if(!l.collected) {
-                    l.mesh.rotation.x += 0.02; l.mesh.rotation.y += 0.02;
-                    if (player.position.distanceTo(l.mesh.position) < 3) {
-                        l.collected = true; scene.remove(l.mesh); playCollectSound();
-                        if (!collectedLetters.includes(l.char)) collectedLetters.push(l.char);
-                        updateLettersUI();
-                        if (isMultiplayer && conn && conn.open) conn.send({ type: 'collect_letter', char: l.char });
+                if (!l.collected) {
+                    l.mesh.rotation.y += delta * 1.5;
+                    if (player.position.distanceTo(l.mesh.position) < 2.5) {
+                        l.collected = true;
+                        scene.remove(l.mesh);
+                        if (!collectedLetters.includes(l.char)) {
+                            collectedLetters.push(l.char);
+                            updateLettersUI();
+                            score += 500;
+                            coins += 100;
+                            saveProfile();
+                            document.getElementById('coins').innerText = coins;
+                            showToast(`Letter '${l.char}' Found! (+100 Coins)`);
+                        }
                     }
                 }
             });
 
-            if (portal && crystalsCollected >= TOTAL_CRYSTALS) {
-                portalRing.rotation.z += delta * 3;
-                if (player.position.distanceTo(portal.position) < 3.8) {
-                    gameActive = false; document.getElementById('hud').style.display = 'none'; document.getElementById('overlay').style.display = 'flex';
-                    document.getElementById('victory-card').classList.remove('hidden'); document.getElementById('final-time').innerText = document.getElementById('timer').innerText;
-                    document.getElementById('final-score').innerText = score + Math.max(0, 1000 - elapsedTime * 5) + (isHardcore ? 5000 : 0);
-                    localStorage.removeItem('skyRealmSave'); if (saveInterval) clearInterval(saveInterval);
-                }
+            // Portal Victory Check
+            if (portal && player.position.distanceTo(portal.position) < 4.0) {
+                gameActive = false;
+                const totalSecs = Math.floor((Date.now() - startTime) / 1000);
+                const mins = String(Math.floor(totalSecs / 60)).padStart(2, '0');
+                const secs = String(totalSecs % 60).padStart(2, '0');
+                document.getElementById('final-time').innerText = `${mins}:${secs}`;
+                document.getElementById('final-score').innerText = score + (crystalsCollected * 500);
+                document.getElementById('hud').style.display = 'none';
+                document.getElementById('overlay').style.display = 'flex';
+                document.getElementById('start-card').classList.add('hidden');
+                document.getElementById('victory-card').classList.remove('hidden');
+                showToast("LEVEL COMPLETE!");
             }
-        }
 
-        function updateCamera() {
-            const targetCamPos = new THREE.Vector3(player.position.x, player.position.y + 13, player.position.z + 24);
-            camera.position.lerp(targetCamPos, 0.08); camera.lookAt(player.position.x, player.position.y + 2, player.position.z);
-            if (gameActive) {
-                const spd = Math.sqrt(velocity.x*velocity.x + velocity.z*velocity.z);
-                if (spd > 1) { camera.position.x += (Math.random()-0.5)*(spd/30)*0.15; camera.position.y += (Math.random()-0.5)*(spd/30)*0.15; }
+            // Fall Off Map / Out of Bounds Check
+            if (player.position.y < -30) {
+                respawnPlayer();
             }
         }
 
         function animate() {
             requestAnimationFrame(animate);
-            if (!gameActive) { renderer.render(scene, camera); return; }
 
             const delta = Math.min(clock.getDelta(), 0.1);
-            const time = clock.getElapsedTime();
+            const now = Date.now();
 
-            if (Date.now() % 2 === 0) sendSync(); // Multiplayer network tick
+            if (gameActive) {
+                // Update Moving Platforms
+                movingPlatforms.forEach(mp => {
+                    const prevX = mp.mesh.position.x;
+                    const prevY = mp.mesh.position.y;
+                    const prevZ = mp.mesh.position.z;
 
-            if (trailLine && unlocks.trail !== 'none') {
-                trailPositions.push(player.position.clone()); if (trailPositions.length > 20) trailPositions.shift();
-                const pos = new Float32Array(trailPositions.length * 3);
-                for(let i=0; i<trailPositions.length; i++) { pos[i*3]=trailPositions[i].x; pos[i*3+1]=trailPositions[i].y; pos[i*3+2]=trailPositions[i].z; }
-                trailLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+                    const t = (Math.sin(now * 0.001 * mp.speed) + 1) / 2;
+                    mp.mesh.position.x = THREE.MathUtils.lerp(mp.startX, mp.endX, t);
+                    mp.mesh.position.y = THREE.MathUtils.lerp(mp.startY, mp.endY, t);
+                    mp.mesh.position.z = THREE.MathUtils.lerp(mp.startZ, mp.endZ, t);
+
+                    mp.deltaPos.set(
+                        mp.mesh.position.x - prevX,
+                        mp.mesh.position.y - prevY,
+                        mp.mesh.position.z - prevZ
+                    );
+                });
+
+                updatePhysics(delta);
+                updateParticles(delta);
+
+                if (portalRing) portalRing.rotation.z += delta * 1.5;
+
+                // Update Timer Display
+                const elapsedSecs = Math.floor((now - startTime) / 1000);
+                const mins = String(Math.floor(elapsedSecs / 60)).padStart(2, '0');
+                const secs = String(elapsedSecs % 60).padStart(2, '0');
+                document.getElementById('timer').innerText = `${mins}:${secs}`;
+
+                // Smooth Camera Tracking
+                if (player) {
+                    const targetCamPos = new THREE.Vector3(
+                        player.position.x,
+                        player.position.y + 14,
+                        player.position.z + 24
+                    );
+                    camera.position.lerp(targetCamPos, 0.1);
+                    camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
+                }
+
+                // Dynamic Shadow Positioning
+                if (shadowMesh && player) {
+                    shadowMesh.position.x = player.position.x;
+                    shadowMesh.position.z = player.position.z;
+                    
+                    let groundY = -20;
+                    islands.forEach(isl => {
+                        if (isl.minX !== undefined) {
+                            if (player.position.x >= isl.minX && player.position.x <= isl.maxX &&
+                                player.position.z >= isl.minZ && player.position.z <= isl.maxZ &&
+                                isl.topY <= player.position.y + 0.1) {
+                                if (isl.topY > groundY) groundY = isl.topY;
+                            }
+                        }
+                    });
+                    shadowMesh.position.y = Math.max(-20, groundY + 0.05);
+                    const distToGround = Math.max(0.1, player.position.y - shadowMesh.position.y);
+                    const shadowScale = Math.max(0.3, 1.2 - distToGround * 0.03);
+                    shadowMesh.scale.set(shadowScale, shadowScale, shadowScale);
+                    shadowMesh.material.opacity = Math.max(0.1, 0.7 - distToGround * 0.02);
+                }
+
+                sendSync();
             }
 
-            updatePhysics(delta);
-
-            movingPlatforms.forEach(p => {
-                const oldX = p.mesh.position.x, oldY = p.mesh.position.y, oldZ = p.mesh.position.z;
-                const t = (Math.sin(time * p.speed) + 1) * 0.5;
-                p.mesh.position.set(p.startX + t*(p.endX-p.startX), p.startY + t*(p.endY-p.startY), p.startZ + t*(p.endZ-p.startZ));
-                p.deltaX = p.mesh.position.x - oldX; p.deltaY = p.mesh.position.y - oldY; p.deltaZ = p.mesh.position.z - oldZ;
-            });
-            crystals.forEach(c => { if (!c.collected) { c.mesh.rotation.y += delta * 2.5; c.mesh.position.y = c.initialY + Math.sin(time * 3 + c.mesh.position.x) * 0.35; } });
-
-            elapsedTime = Math.floor((Date.now() - startTime) / 1000);
-            document.getElementById('timer').innerText = `${String(Math.floor(elapsedTime/60)).padStart(2,'0')}:${String(elapsedTime%60).padStart(2,'0')}`;
-            
-            updateCamera();
             renderer.render(scene, camera);
         }
 
-        // --- MENU EVENTS ---
+        function initMultiplayer() {
+            const hostBtn = document.getElementById('host-btn');
+            const joinBtn = document.getElementById('join-btn');
+            const mpMenuBtn = document.getElementById('multiplayer-menu-btn');
+            const backMpBtn = document.getElementById('back-mp-btn');
+            
+            if (mpMenuBtn) {
+                mpMenuBtn.onclick = () => {
+                    document.getElementById('start-card').classList.add('hidden');
+                    document.getElementById('multiplayer-card').classList.remove('hidden');
+                };
+            }
+            if (backMpBtn) {
+                backMpBtn.onclick = () => {
+                    document.getElementById('multiplayer-card').classList.add('hidden');
+                    document.getElementById('start-card').classList.remove('hidden');
+                };
+            }
+            if (hostBtn) {
+                hostBtn.onclick = () => {
+                    if (peer) peer.destroy();
+                    peer = new Peer();
+                    document.getElementById('mp-status').innerText = "Creating room...";
+                    peer.on('open', id => {
+                        document.getElementById('room-id-display').innerText = id;
+                        document.getElementById('mp-status').innerText = "Waiting for player 2...";
+                        isMultiplayer = true;
+                        isHost = true;
+                        createPlayer2();
+                    });
+                    peer.on('connection', connection => {
+                        conn = connection;
+                        document.getElementById('mp-status').innerText = "Connected! Starting game...";
+                        setupMultiplayerEvents();
+                        setTimeout(() => { startNewGame(false); }, 1000);
+                    });
+                };
+            }
+            if (joinBtn) {
+                joinBtn.onclick = () => {
+                    const joinId = document.getElementById('join-id-input').value.trim();
+                    if (!joinId) { showToast("Enter a Room ID!"); return; }
+                    if (peer) peer.destroy();
+                    peer = new Peer();
+                    document.getElementById('mp-status').innerText = "Connecting...";
+                    peer.on('open', () => {
+                        conn = peer.connect(joinId);
+                        conn.on('open', () => {
+                            document.getElementById('mp-status').innerText = "Connected! Joining game...";
+                            isMultiplayer = true;
+                            isHost = false;
+                            createPlayer2();
+                            setupMultiplayerEvents();
+                            setTimeout(() => { startNewGame(false); }, 1000);
+                        });
+                    });
+                };
+            }
+        }
+
         window.onload = function() {
-            loadProfile(); initScene(); createPlayer(); createWorld(); setupControls();
-            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
-            if (localStorage.getItem('skyRealmSave')) document.getElementById('continue-btn').classList.remove('hidden');
+            loadProfile();
+            initScene();
+            setupControls();
+            createWorld();
+            createPlayer();
+            initMultiplayer();
 
             document.getElementById('start-normal-btn').onclick = () => startNewGame(false);
             document.getElementById('start-hardcore-btn').onclick = () => startNewGame(true);
-            document.getElementById('continue-btn').onclick = continueGame;
-            document.getElementById('open-shop-btn').onclick = () => { document.getElementById('start-card').classList.add('hidden'); document.getElementById('shop-card').classList.remove('hidden'); renderShop(); };
-            document.getElementById('close-shop-btn').onclick = () => { document.getElementById('shop-card').classList.add('hidden'); document.getElementById('start-card').classList.remove('hidden'); };
-            document.getElementById('restart-btn').onclick = () => { localStorage.removeItem('skyRealmSave'); location.reload(); };
-
-            document.getElementById('multiplayer-menu-btn').onclick = () => { document.getElementById('start-card').classList.add('hidden'); document.getElementById('multiplayer-card').classList.remove('hidden'); };
-            document.getElementById('back-mp-btn').onclick = () => { document.getElementById('multiplayer-card').classList.add('hidden'); document.getElementById('start-card').classList.remove('hidden'); if(peer){ peer.destroy(); peer=null; conn=null; }};
+            document.getElementById('open-shop-btn').onclick = () => {
+                renderShop();
+                document.getElementById('start-card').classList.add('hidden');
+                document.getElementById('shop-card').classList.remove('hidden');
+            };
+            document.getElementById('close-shop-btn').onclick = () => {
+                document.getElementById('shop-card').classList.hidden = false;
+                document.getElementById('shop-card').classList.add('hidden');
+                document.getElementById('start-card').classList.remove('hidden');
+            };
+            document.getElementById('restart-btn').onclick = () => {
+                document.getElementById('victory-card').classList.add('hidden');
+                document.getElementById('start-card').classList.remove('hidden');
+            };
             
-            document.getElementById('host-btn').onclick = () => {
-                document.getElementById('mp-status').innerText = "Creating room...";
-                peer = new Peer();
-                peer.on('open', id => { document.getElementById('room-id-display').innerText = id; document.getElementById('mp-status').innerText = "Waiting for Player 2..."; });
-                peer.on('connection', c => { conn = c; isHost = true; isMultiplayer = true; document.getElementById('mp-status').innerText = "Player 2 joined! Starting..."; setupMultiplayerEvents(); createPlayer2(); setTimeout(() => startNewGame(false), 1500); });
-            };
-            document.getElementById('join-btn').onclick = () => {
-                const id = document.getElementById('join-id-input').value.trim(); if (!id) return;
-                document.getElementById('mp-status').innerText = "Connecting...";
-                peer = new Peer();
-                peer.on('open', () => { conn = peer.connect(id); conn.on('open', () => { isHost = false; isMultiplayer = true; setupMultiplayerEvents(); createPlayer2(); startNewGame(false); }); });
-            };
+            // Start the animation loop
             animate();
         };
     </script>
