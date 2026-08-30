@@ -38,7 +38,7 @@
         .btn-action {
             transition: transform 0.1s; pointer-events: auto; border: 4px solid #000;
             box-shadow: 6px 6px 0px #000; border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
-            cursor: pointer;
+            cursor: pointer; touch-action: manipulation;
         }
         .btn-action:hover { transform: translate(-2px, -2px) scale(1.02); box-shadow: 8px 8px 0px #000; }
         .btn-action:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0px #000; }
@@ -50,10 +50,9 @@
 
         .touch-btn {
             background: #ffffff; border: 4px solid #000; box-shadow: 4px 4px 0px #000;
-            border-radius: 10px 25px 15px 20px; touch-action: manipulation; color: #000;
-            cursor: pointer;
+            border-radius: 10px 25px 15px 20px; touch-action: none; color: #000;
+            cursor: pointer; user-select: none; -webkit-user-select: none;
         }
-        .touch-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
 
         #toast {
             position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
@@ -842,7 +841,7 @@
             addCoffee(15, 15.1, -50, 4);
             spawnCrystals(15, 16.5, -50, 1, 'x'); 
             createBlock(-15, 21, -70, 8, 2, 8, 0x3498db); 
-            createJumpPad(-15, 22.1, -70, 0, 68, -35);
+            createJumpPad(-15, 22.1, -70, 0, 75, -35);
 
             createBlock(-15, 65, -120, 20, 2, 20, 0x9b59b6);
             createCheckpoint(-15, 67, -120, "Atoll Overlook");
@@ -855,7 +854,7 @@
             createPencil(-20, 85, -235, 20, true); 
             addTack(-20, 87.5, -240);
             
-            createJumpPad(-20, 87.5, -235, 25, 50, -25); 
+            createJumpPad(-20, 87.5, -235, 25, 85, -25); 
             createRing(0, 115, -255);
             addAirplane(0, 118, -255);
             createRing(10, 125, -270);
@@ -879,9 +878,9 @@
             createJumpPad(-15, 222.1, -475, 0, 55, -35); 
             createTire(-15, 250, -510, 6);
             addWind(-15, 253, -520, 30);
-            createJumpPad(-15, 252.5, -510, 35, 50, -20);
+            createJumpPad(-15, 252.5, -510, 35, 65, -20);
             createTire(20, 280, -530, 6);
-            createJumpPad(20, 282.5, -530, -35, 60, -30);
+            createJumpPad(20, 282.5, -530, -35, 70, -30);
             createBlock(-15, 320, -560, 16, 2, 16, 0x3498db); 
             createCheckpoint(-15, 322, -560, "Bouncy Peak");
 
@@ -959,7 +958,7 @@
 
             createTire(-10, 20, -215, 8);
             createTire(10, 30, -245, 8);
-            createJumpPad(10, 30.5, -245, -40, 60, -30);
+            createJumpPad(10, 30.5, -245, -30, 65, -25);
 
             // Final Stretch
             createBlock(-30, 55, -285, 30, 2, 30, 0x3498db);
@@ -1023,16 +1022,42 @@
             const bindTouch = (id, key) => {
                 const el = document.getElementById(id);
                 if (!el) return;
-                el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
-                el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+                const press = (e) => { 
+                    e.preventDefault(); 
+                    keys[key] = true; 
+                    el.style.transform = "translate(2px, 2px)";
+                    el.style.boxShadow = "2px 2px 0px #000";
+                };
+                const release = (e) => { 
+                    e.preventDefault(); 
+                    keys[key] = false; 
+                    el.style.transform = "";
+                    el.style.boxShadow = "";
+                };
+                el.addEventListener('pointerdown', press);
+                el.addEventListener('pointerup', release);
+                el.addEventListener('pointercancel', release);
+                el.addEventListener('pointerout', release);
             };
             bindTouch('btn-up', 'forward'); bindTouch('btn-down', 'backward'); bindTouch('btn-left', 'left'); bindTouch('btn-right', 'right'); bindTouch('btn-boost', 'boost');
 
             const jumpBtn = document.getElementById('btn-jump');
             if (jumpBtn) {
-                jumpBtn.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); jumpBufferTimer = 0.15; triggerJumpIfPossible();
-                });
+                const pressJump = (e) => {
+                    e.preventDefault(); 
+                    jumpBufferTimer = 0.15; triggerJumpIfPossible();
+                    jumpBtn.style.transform = "translate(2px, 2px)";
+                    jumpBtn.style.boxShadow = "2px 2px 0px #000";
+                };
+                const releaseJump = (e) => {
+                    e.preventDefault();
+                    jumpBtn.style.transform = "";
+                    jumpBtn.style.boxShadow = "";
+                }
+                jumpBtn.addEventListener('pointerdown', pressJump);
+                jumpBtn.addEventListener('pointerup', releaseJump);
+                jumpBtn.addEventListener('pointercancel', releaseJump);
+                jumpBtn.addEventListener('pointerout', releaseJump);
             }
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -1154,7 +1179,7 @@
             velocity.y -= GRAVITY * subDelta;
             for (let w of windCurrents) {
                 if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) {
-                    velocity.y += 45 * subDelta;
+                    if (velocity.y < 50) velocity.y += 180 * subDelta;
                 }
             }
 
