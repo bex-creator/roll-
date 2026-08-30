@@ -161,7 +161,7 @@
         <div id="multiplayer-card" class="hidden bg-white p-8 max-w-md w-full mx-4 text-center border-4 border-black shadow-[10px_10px_0px_rgba(0,0,0,1)]" style="border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;">
             <div class="text-6xl mb-3">🤝</div>
             <h1 class="text-4xl font-fredoka text-black mb-4">CO-OP CLIMB</h1>
-            <p class="text-gray-600 mb-4 font-bold">Work together to reach the top!</p>
+            <p class="text-gray-600 mb-4 font-bold">Work together! Special Co-op Map enabled.<br>Bounce off each other to reach new heights!</p>
             
             <div class="bg-gray-100 p-4 border-2 border-black rounded-xl mb-4">
                 <button id="host-btn" class="btn-action w-full py-2 bg-green-300 text-black font-fredoka text-lg mb-2">HOST GAME</button>
@@ -211,6 +211,7 @@
         // Game Entities arrays
         let islands = [], crystals = [], jumpPads = [], movingPlatforms = [];
         let coffeePuddles = [], thumbtacks = [], airplanes = [], windCurrents = [], secretLetters = [], checkpoints = [];
+        let switches = []; // For Coop puzzles
         let trailPositions = [], trailLine = null;
         let portal, portalRing;
 
@@ -258,6 +259,7 @@
 
         // Multiplayer P2P
         let peer = null, conn = null, isMultiplayer = false, player2 = null, isHost = false;
+        let coopSwitches = {}; // Tracks globally pressed switches
 
         function addSketchOutline(mesh, thickness = 2) {
             const edges = new THREE.EdgesGeometry(mesh.geometry);
@@ -374,49 +376,36 @@
             if (item.type === 'trail') { unlocks.trail = item.value; createPlayer(); }
             if (item.type === 'skin') { unlocks.skin = item.value; createPlayer(); }
             saveProfile();
-        }
-
-        function startNewGame(hardcore) {
-            isHardcore = hardcore;
-            score = 0;
-            crystalsCollected = 0;
-            collectedLetters = [];
-            elapsedTime = 0;
-            startTime = Date.now();
-            lastCheckpoint = { x: 0, y: 5, z: 0 };
             
-            player.position.set(0, 5, 0);
-            velocity.set(0, 0, 0);
-            
-            crystals.forEach(c => { c.collected = false; scene.add(c.mesh); });
-            secretLetters.forEach(l => { l.collected = false; scene.add(l.mesh); });
-            checkpoints.forEach((cp, idx) => {
-                cp.active = (idx === 0);
-                if (cp.flagMesh) cp.flagMesh.material.color.setHex(cp.active ? 0x2ecc71 : 0xe74c3c);
-            });
-            
-            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
-            document.getElementById('score').innerText = score;
-            document.getElementById('coins').innerText = coins;
-            updateLettersUI();
-            
-            document.getElementById('overlay').style.display = 'none';
-            document.getElementById('hud').style.display = 'flex';
-            initAudio();
-            gameActive = true;
-            clock.start();
+            // Sync new appearance in multiplayer
+            if (isMultiplayer && conn && conn.open) {
+                conn.send({ type: 'profile', color: unlocks.color, skin: unlocks.skin });
+            }
         }
 
         function setupMultiplayerEvents() {
             if (!conn) return;
             conn.on('data', data => {
-                if (data.type === 'sync' && player2) {
+                if (data.type === 'profile') {
+                    // Recreate Player 2 with their actual customized visuals!
+                    createPlayer2(data.color, data.skin);
+                } else if (data.type === 'sync' && player2) {
                     player2.position.set(data.x, data.y, data.z);
                     player2.rotation.set(data.rx, data.ry, data.rz);
                 } else if (data.type === 'collect_crystal') {
                     if (crystals[data.index] && !crystals[data.index].collected) {
                         crystals[data.index].collected = true;
-                        scene.remove(crystals[data.index].mesh);
+                        if (crystals[data.index].mesh.parent) {
+                            scene.remove(crystals[data.index].mesh);
+                        }
+                    }
+                } else if (data.type === 'switch') {
+                    // Partner activated a switch!
+                    coopSwitches[data.id] = true;
+                    const sw = switches.find(s => s.id === data.id);
+                    if (sw) {
+                        sw.mesh.material.color.setHex(0x2ecc71); // Turn Green
+                        sw.mesh.position.y = sw.startY - 0.2; // Press down visually
                     }
                 }
             });
@@ -429,6 +418,51 @@
                     x: player.position.x, y: player.position.y, z: player.position.z,
                     rx: player.rotation.x, ry: player.rotation.y, rz: player.rotation.z
                 });
+            }
+        }
+
+        function startNewGame(hardcore, coop = false) {
+            isHardcore = hardcore;
+            isMultiplayer = coop;
+            score = 0;
+            crystalsCollected = 0;
+            collectedLetters = [];
+            elapsedTime = 0;
+            startTime = Date.now();
+            lastCheckpoint = { x: 0, y: 5, z: 0 };
+            
+            clearWorld(); // Wipe the existing map before loading
+            
+            if (isMultiplayer) {
+                createCoopWorld(); // Load the completely different co-op map!
+                showToast("Co-op Map Loaded! Work together!");
+            } else {
+                createSoloWorld(); // Load standard map
+            }
+            
+            player.position.set(0, 5, 0);
+            velocity.set(0, 0, 0);
+            
+            checkpoints.forEach((cp, idx) => {
+                cp.active = (idx === 0);
+                if (cp.flagMesh) cp.flagMesh.material.color.setHex(cp.active ? 0x2ecc71 : 0xe74c3c);
+            });
+            
+            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
+            document.getElementById('score').innerText = score;
+            document.getElementById('coins').innerText = coins;
+            updateLettersUI();
+            
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('multiplayer-card').classList.add('hidden');
+            document.getElementById('hud').style.display = 'flex';
+            initAudio();
+            gameActive = true;
+            clock.start();
+            
+            if (isMultiplayer && conn && conn.open) {
+                // Ensure partner has our profile visuals
+                conn.send({ type: 'profile', color: unlocks.color, skin: unlocks.skin });
             }
         }
 
@@ -446,7 +480,6 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             document.body.appendChild(renderer.domElement);
 
-            // Lighting
             scene.add(new THREE.AmbientLight(0xffffff, 0.75));
             const sunLight = new THREE.DirectionalLight(0xfffbf0, 1.0);
             sunLight.position.set(300, 900, 100); 
@@ -519,14 +552,35 @@
             }
         }
 
-        function createPlayer2() {
+        function createPlayer2(color = 0x3498db, skin = 'normal') {
             if (player2) scene.remove(player2);
-            const p2Geo = new THREE.IcosahedronGeometry(1.2, 1);
-            const p2Mat = new THREE.MeshToonMaterial({ color: 0x3498db, transparent: true, opacity: 0.7 });
+            let p2Geo = skin === 'paper' ? new THREE.DodecahedronGeometry(1.2, 0) : new THREE.IcosahedronGeometry(1.2, 1);
+            let p2Mat = new THREE.MeshToonMaterial({ color: color });
             player2 = new THREE.Mesh(p2Geo, p2Mat);
             player2.castShadow = true;
-            player2.position.set(0, -100, 0);
+            addSketchOutline(player2);
+            
+            if (skin !== 'paper') {
+                const ringGeo = new THREE.TorusGeometry(1.4, 0.1, 4, 12);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                player2.add(ring);
+            }
+            player2.position.set(0, -100, 0); // Hide until sync comes
             scene.add(player2);
+        }
+
+        function clearWorld() {
+            [islands, crystals, jumpPads, movingPlatforms, coffeePuddles, thumbtacks, airplanes, windCurrents, secretLetters, checkpoints, switches].forEach(arr => {
+                arr.forEach(item => {
+                    if (item.mesh && item.mesh.parent) scene.remove(item.mesh);
+                    if (item.group && item.group.parent) scene.remove(item.group);
+                });
+                arr.length = 0; // clear array memory
+            });
+            if (portal) { scene.remove(portal); portal = null; portalRing = null; }
+            coopSwitches = {};
         }
 
         function createBlock(x, y, z, width, height, depth, color = 0x2ecc71, isSticky = false, isRuler = false) {
@@ -540,7 +594,7 @@
             group.updateMatrixWorld(true);
 
             islands.push({
-                type: 'block', cx: x, cz: z, mesh: group,
+                type: 'block', cx: x, cz: z, group: group, mesh: box, // Attach mesh for clearing later
                 minX: x - width/2, maxX: x + width/2, minZ: z - depth/2, maxZ: z + depth/2,
                 topY: y + height/2, bottomY: y - height/2, isSticky: isSticky, isRuler: isRuler
             });
@@ -560,7 +614,7 @@
 
             const thickness = radius * 0.4;
             islands.push({
-                type: 'tire', cx: x, cz: z, mesh: group,
+                type: 'tire', cx: x, cz: z, group: group, mesh: mesh,
                 outerRadius: radius * 1.4, innerRadius: radius * 0.6,
                 topY: y + thickness, bottomY: y - thickness
             });
@@ -584,7 +638,7 @@
             group.updateMatrixWorld(true);
 
             islands.push({
-                type: 'eraser', cx: x, cz: z, mesh: group,
+                type: 'eraser', cx: x, cz: z, group: group, mesh: m1, // Partial reference for clear
                 minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + h/2, bottomY: y - h/2
             });
             return group;
@@ -614,7 +668,7 @@
             const w = isRotated ? length + 8 : r * 1.5;
             const d = isRotated ? r * 1.5 : length + 8;
             islands.push({
-                type: 'pencil', cx: x, cz: z, mesh: group,
+                type: 'pencil', cx: x, cz: z, group: group, mesh: body,
                 minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + r * 0.9, bottomY: y - r * 0.9
             });
             return group;
@@ -631,7 +685,7 @@
             scene.add(group);
             group.updateMatrixWorld(true);
 
-            islands.push({ type: 'ring', cx: x, cz: z, mesh: group, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25, bottomY: y - 0.25 });
+            islands.push({ type: 'ring', cx: x, cz: z, group: group, mesh: ring, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25, bottomY: y - 0.25 });
         }
 
         function createJumpPad(x, y, z, launchVx, launchVy, launchVz) {
@@ -639,29 +693,30 @@
             pad.position.set(x, y, z); pad.receiveShadow = true; pad.castShadow = true; addSketchOutline(pad); scene.add(pad);
             const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.15, 4, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
             ring.rotation.x = Math.PI / 2; ring.position.y = 0.35; pad.add(ring);
-            jumpPads.push({ pos: new THREE.Vector3(x, y, z), launch: new THREE.Vector3(launchVx, launchVy, launchVz) });
+            jumpPads.push({ mesh: pad, pos: new THREE.Vector3(x, y, z), launch: new THREE.Vector3(launchVx, launchVy, launchVz) });
         }
 
-        function createMovingPlatform(startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed = 1.0) {
-            const pMesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, depth), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
+        function createMovingPlatform(startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed = 1.0, triggerId = null) {
+            const pMesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, depth), new THREE.MeshToonMaterial({ color: triggerId ? 0x95a5a6 : 0xf1c40f }));
+            pMesh.position.set(startX, startY, startZ);
             pMesh.receiveShadow = true; pMesh.castShadow = true; addSketchOutline(pMesh); scene.add(pMesh);
-            movingPlatforms.push({ mesh: pMesh, startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed, deltaPos: new THREE.Vector3() });
+            movingPlatforms.push({ mesh: pMesh, startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed, triggerId, deltaPos: new THREE.Vector3() });
         }
 
         function addCoffee(x, y, z, r=3) {
             const pMesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0x4a3728 }));
             pMesh.position.set(x, y, z); scene.add(pMesh);
-            coffeePuddles.push({ x, y, z, r });
+            coffeePuddles.push({ mesh: pMesh, x, y, z, r });
         }
         function addTack(x, y, z) {
             const tMesh = new THREE.Mesh(new THREE.ConeGeometry(1, 2, 8), new THREE.MeshToonMaterial({ color: 0xff3333 }));
             tMesh.position.set(x, y, z); scene.add(tMesh);
-            thumbtacks.push({ x, y, z, r: 1.5 });
+            thumbtacks.push({ mesh: tMesh, x, y, z, r: 1.5 });
         }
         function addWind(x, y, z, h=20) {
             const wMesh = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, h, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.3, wireframe: true }));
             wMesh.position.set(x, y + h/2, z); scene.add(wMesh);
-            windCurrents.push({ x, y, z, r: 4, h });
+            windCurrents.push({ mesh: wMesh, x, y, z, r: 4, h });
         }
 
         function createPaperAirplaneGeometry() {
@@ -695,9 +750,7 @@
             addSketchOutline(aMesh);
             airplanes.push({ 
                 mesh: aMesh, 
-                startX: x, 
-                startY: y, 
-                startZ: z, 
+                startX: x, startY: y, startZ: z, 
                 speed: 0.8 + Math.random() * 0.4, 
                 phase: Math.random() * Math.PI * 2 
             });
@@ -733,38 +786,25 @@
             const group = new THREE.Group();
             group.position.set(x, y, z);
 
-            // Flagpole
             const poleGeo = new THREE.CylinderGeometry(0.2, 0.2, 7, 8);
             const poleMat = new THREE.MeshToonMaterial({ color: 0x333333 });
             const pole = new THREE.Mesh(poleGeo, poleMat);
-            pole.position.y = 3.5;
-            addSketchOutline(pole);
-            group.add(pole);
+            pole.position.y = 3.5; addSketchOutline(pole); group.add(pole);
 
-            // Animated Banner/Flag
             const flagGeo = new THREE.BoxGeometry(2.5, 1.5, 0.2);
             const flagMat = new THREE.MeshToonMaterial({ color: 0xe74c3c });
             const flag = new THREE.Mesh(flagGeo, flagMat);
-            flag.position.set(1.25, 6, 0);
-            addSketchOutline(flag);
-            group.add(flag);
+            flag.position.set(1.25, 6, 0); addSketchOutline(flag); group.add(flag);
 
-            // Base Ring Pad
             const padGeo = new THREE.CylinderGeometry(3, 3.2, 0.3, 12);
             const padMat = new THREE.MeshToonMaterial({ color: 0x34495e });
             const pad = new THREE.Mesh(padGeo, padMat);
-            pad.position.y = 0.15;
-            addSketchOutline(pad);
-            group.add(pad);
+            pad.position.y = 0.15; addSketchOutline(pad); group.add(pad);
 
             scene.add(group);
 
             checkpoints.push({
-                x, y: y + 2, z,
-                label,
-                active: false,
-                flagMesh: flag,
-                group
+                x, y: y + 2, z, label, active: false, flagMesh: flag, group
             });
         }
 
@@ -785,18 +825,26 @@
             }
         }
 
-        function createWorld() {
-            // Phase 1: Hub Base (Y: 0)
+        function createCoopSwitch(x, y, z, id) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 0.2, 16), new THREE.MeshToonMaterial({ color: 0x333333 }));
+            base.position.y = -0.1; addSketchOutline(base); group.add(base);
+
+            const button = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 0.4, 16), new THREE.MeshToonMaterial({ color: 0xe74c3c }));
+            button.position.y = 0.2; addSketchOutline(button); group.add(button);
+
+            scene.add(group);
+            switches.push({ id, x, y, z, group, mesh: button, startY: y + 0.2, active: false });
+        }
+
+        function createSoloWorld() {
             createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
             createCheckpoint(0, 1, 0, "Start Pad");
-            if (checkpoints.length > 0) {
-                checkpoints[0].active = true;
-                if (checkpoints[0].flagMesh) checkpoints[0].flagMesh.material.color.setHex(0x2ecc71);
-            }
             spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
             spawnSecretLetter("D", -10, 3, -10);
 
-            // Phase 2: Sky Steps (Y: 7 - 21)
             createEraser(0, 7, -30, 14, true); 
             createTire(15, 14, -50, 5); 
             addCoffee(15, 15.1, -50, 4);
@@ -804,7 +852,6 @@
             createBlock(-15, 21, -70, 8, 2, 8, 0x3498db); 
             createJumpPad(-15, 22.1, -70, 0, 68, -35);
 
-            // Phase 3: The Floating Atolls (Y: 65 - 85)
             createBlock(-15, 65, -120, 20, 2, 20, 0x9b59b6);
             createCheckpoint(-15, 67, -120, "Atoll Overlook");
             spawnCrystals(-12, 67, -120, 2, 'x');
@@ -816,13 +863,11 @@
             createPencil(-20, 85, -235, 20, true); 
             addTack(-20, 87.5, -240);
             
-            // Phase 4: The Ring Ascent (Y: 85 - 130)
             createJumpPad(-20, 87.5, -235, 25, 50, -25); 
             createRing(0, 115, -255);
             addAirplane(0, 118, -255);
             createRing(10, 125, -270);
             
-            // Phase 5: The Shredder (Y: 135 - 220)
             createEraser(20, 135, -290, 10, false);
             spawnSecretLetter("O", 20, 138, -290);
             createMovingPlatform(20, 135, -305, -10, 150, -330, 5, 2, 5, 1.0); 
@@ -834,13 +879,11 @@
             createTire(15, 195, -415, 3.5); 
             createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true);
             
-            // Phase 6: The Rest Stop (Checkpoint Y: 220)
             createBlock(-15, 220, -475, 25, 4, 25, 0x2ecc71);
             createCheckpoint(-15, 222, -475, "Midway Rest Stop");
             spawnCrystals(-15, 222.8, -475, 4, 'circle', 8);
             spawnSecretLetter("D", -10, 223, -480);
             
-            // Phase 7: The Bouncy Castle (Y: 230 - 320)
             createJumpPad(-15, 222.1, -475, 0, 55, -35); 
             createTire(-15, 250, -510, 6);
             addWind(-15, 253, -520, 30);
@@ -850,7 +893,6 @@
             createBlock(-15, 320, -560, 16, 2, 16, 0x3498db); 
             createCheckpoint(-15, 322, -560, "Bouncy Peak");
 
-            // Phase 8: The High Pencil Bridge (Y: 320 - 450)
             createMovingPlatform(-15, 320, -575, -15, 335, -590, 6, 2, 6, 1.5);
             createPencil(-15, 335, -605, 20, false);
             spawnSecretLetter("L", -15, 338, -605);
@@ -863,7 +905,6 @@
             createBlock(0, 410, -685, 12, 2, 12, 0xe67e22);
             createCheckpoint(0, 412, -685, "Pencil Summit");
 
-            // Phase 9: The Eraser Gauntlet (Y: 410 - 520)
             createJumpPad(0, 411.1, -685, 45, 65, 0); 
             createEraser(45, 450, -685, 12, true);
             addCoffee(45, 451.6, -685, 4); addTack(45, 451.6, -680);
@@ -873,21 +914,75 @@
             createMovingPlatform(45, 490, -745, 15, 510, -765, 4, 2, 4, 1.8); 
             createMovingPlatform(15, 510, -775, -15, 530, -790, 4, 2, 4, 2.0);
             
-            // Phase 10: TRUE ZENITH (Y: 530)
             createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
             createCheckpoint(-25, 532, -810, "Summit Checkpoint");
             spawnCrystals(-15, 532.8, -810, 6, 'circle', 10);
             spawnSecretLetter("E", -20, 533, -805);
 
+            buildPortal(-15, 534.5, -810);
+            TOTAL_CRYSTALS = crystals.length;
+        }
+
+        function createCoopWorld() {
+            // Room 1: The High Ledge - Requires bouncing off partner!
+            createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
+            createCheckpoint(0, 1, 0, "Co-op Start");
+            spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
+
+            // Tall wall impossible to reach without using the other player as a trampoline
+            createBlock(0, 12, -25, 20, 2, 20, 0x3498db); 
+            createCoopSwitch(0, 13, -25, 'switch1'); 
+            spawnSecretLetter("C", 0, 14, -30);
+
+            // Door that blocks the bottom path, opens when top player hits switch
+            createMovingPlatform(0, 6, -45, 0, -10, -45, 20, 12, 20, 0, 'switch1');
+
+            // Room 2: Split Paths
+            createBlock(0, 0, -75, 40, 2, 20, 0x9b59b6);
+            createCheckpoint(0, 1, -75, "Split Decision");
+
+            // Path A (High Platform)
+            createBlock(-20, 15, -100, 10, 2, 20, 0xf1c40f);
+            createCoopSwitch(-20, 16, -105, 'switch2');
+            spawnCrystals(-20, 17, -95, 2, 'z');
+
+            // Path B (Low Platform)
+            createBlock(20, 0, -100, 10, 2, 20, 0xe67e22);
+            createCoopSwitch(20, 1, -105, 'switch3');
+            spawnCrystals(20, 2, -95, 2, 'z');
+
+            // Bridge A opens for Path B (Low)
+            createMovingPlatform(20, -10, -130, 20, 0, -130, 10, 2, 30, 0, 'switch2');
+
+            // Bridge B opens for Path A (High)
+            createMovingPlatform(-20, -10, -130, -20, 15, -130, 10, 2, 30, 0, 'switch3');
+
+            // Room 3: Reunion and Bouncy Challenge
+            createBlock(0, 8, -170, 50, 2, 30, 0x2ecc71);
+            createCheckpoint(0, 9, -170, "Reunion");
+            spawnSecretLetter("O", 0, 10, -170);
+
+            createTire(-10, 15, -210, 8);
+            createTire(10, 20, -230, 8);
+            createJumpPad(10, 20.5, -230, -40, 60, -30);
+
+            // Final Stretch
+            createBlock(-30, 45, -270, 30, 2, 30, 0x3498db);
+            createCheckpoint(-30, 46, -270, "The Duo Zenith");
+            spawnSecretLetter("O", -30, 48, -260);
+            spawnCrystals(-30, 47, -270, 5, 'circle', 8);
+
+            buildPortal(-30, 48, -270);
+            TOTAL_CRYSTALS = crystals.length;
+        }
+
+        function buildPortal(x, y, z) {
             portal = new THREE.Group();
-            portal.position.set(-15, 534.5, -810);
+            portal.position.set(x, y, z);
             portalRing = new THREE.Mesh(new THREE.TorusGeometry(3.8, 0.45, 6, 12), new THREE.MeshToonMaterial({ color: 0x00cec9 }));
             addSketchOutline(portalRing); portal.add(portalRing);
             portal.add(new THREE.Mesh(new THREE.CircleGeometry(3.5, 12), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })));
             scene.add(portal);
-            
-            TOTAL_CRYSTALS = crystals.length;
-            updateLettersUI();
         }
 
         function initAudio() {
@@ -904,6 +999,7 @@
         function playCollectSound() { if(audioStarted) chimeSynth.triggerAttackRelease(["C5", "E5", "G5", "C6"][crystalsCollected%4], "8n"); }
         function playJumpSound() { if(audioStarted) bounceSynth.triggerAttackRelease("C2", "8n"); }
         function playPadSound() { if(audioStarted) padSynth.triggerAttackRelease("G4", "8n"); }
+        function playBoingSound() { if(audioStarted) padSynth.triggerAttackRelease("C5", "8n"); }
 
         function setupControls() {
             window.addEventListener('keydown', (e) => {
@@ -914,10 +1010,7 @@
                     case 'KeyD': case 'ArrowRight': keys.right = true; break;
                     case 'ShiftLeft': case 'ShiftRight': keys.boost = true; break;
                     case 'Space':
-                        if (!e.repeat) {
-                            jumpBufferTimer = 0.15;
-                            triggerJumpIfPossible();
-                        }
+                        if (!e.repeat) { jumpBufferTimer = 0.15; triggerJumpIfPossible(); }
                         break;
                 }
             });
@@ -928,11 +1021,7 @@
                     case 'KeyA': case 'ArrowLeft': keys.left = false; break;
                     case 'KeyD': case 'ArrowRight': keys.right = false; break;
                     case 'ShiftLeft': case 'ShiftRight': keys.boost = false; break;
-                    case 'Space':
-                        if (velocity.y > 5) {
-                            velocity.y *= 0.45;
-                        }
-                        break;
+                    case 'Space': if (velocity.y > 5) velocity.y *= 0.45; break;
                 }
             });
 
@@ -947,9 +1036,7 @@
             const jumpBtn = document.getElementById('btn-jump');
             if (jumpBtn) {
                 jumpBtn.addEventListener('touchstart', (e) => {
-                    e.preventDefault();
-                    jumpBufferTimer = 0.15;
-                    triggerJumpIfPossible();
+                    e.preventDefault(); jumpBufferTimer = 0.15; triggerJumpIfPossible();
                 });
             }
             window.addEventListener('resize', () => {
@@ -970,12 +1057,8 @@
 
         function executeJump(jumpForce, isFirstJump) {
             velocity.y = jumpForce;
-            if (isFirstJump) {
-                jumpsLeft = unlocks.maxJumps - 1;
-                coyoteTimer = 0;
-            } else {
-                jumpsLeft--;
-            }
+            if (isFirstJump) { jumpsLeft = unlocks.maxJumps - 1; coyoteTimer = 0; } 
+            else { jumpsLeft--; }
             jumpBufferTimer = 0;
             
             ballSquish.set(0.75, 1.35, 0.75);
@@ -1019,10 +1102,7 @@
             const now = Date.now();
 
             if (coyoteTimer > 0) coyoteTimer -= subDelta;
-            if (jumpBufferTimer > 0) {
-                jumpBufferTimer -= subDelta;
-                triggerJumpIfPossible();
-            }
+            if (jumpBufferTimer > 0) { jumpBufferTimer -= subDelta; triggerJumpIfPossible(); }
 
             ballSquish.x += (1 - ballSquish.x) * 12 * subDelta;
             ballSquish.y += (1 - ballSquish.y) * 12 * subDelta;
@@ -1089,17 +1169,36 @@
                 }
             }
 
-            // Jump Pads Collision & Launch
+            // Multiplayer Player Collision (Bouncing!)
+            if (isMultiplayer && player2) {
+                const distToP2 = player.position.distanceTo(player2.position);
+                if (distToP2 < BALL_RADIUS * 2.2) {
+                    if (player.position.y > player2.position.y + BALL_RADIUS * 0.5 && velocity.y < 0) {
+                        // Boing! Jump off partner!
+                        velocity.y = 38; // Super bounce
+                        isGrounded = false;
+                        jumpsLeft = unlocks.maxJumps;
+                        ballSquish.set(0.6, 1.5, 0.6);
+                        createDustBurst(player.position.x, player.position.y - 1, player.position.z, 12, 0x00ffff);
+                        playBoingSound();
+                        showToast("Partner Bounce!");
+                    } else {
+                        // Push away horizontally so they don't clip
+                        const pushDir = new THREE.Vector3().subVectors(player.position, player2.position).normalize();
+                        velocity.x += pushDir.x * 60 * subDelta;
+                        velocity.z += pushDir.z * 60 * subDelta;
+                    }
+                }
+            }
+
+            // Jump Pads
             jumpPads.forEach(pad => {
                 const distXZ = Math.hypot(player.position.x - pad.pos.x, player.position.z - pad.pos.z);
                 const distY = Math.abs((player.position.y - BALL_RADIUS) - pad.pos.y);
                 if (distXZ < 2.6 && distY < 2.0 && (now - lastPadHitTime > 250)) {
                     lastPadHitTime = now;
-                    velocity.x = pad.launch.x;
-                    velocity.y = pad.launch.y;
-                    velocity.z = pad.launch.z;
-                    isGrounded = false;
-                    coyoteTimer = 0;
+                    velocity.x = pad.launch.x; velocity.y = pad.launch.y; velocity.z = pad.launch.z;
+                    isGrounded = false; coyoteTimer = 0;
                     ballSquish.set(0.6, 1.5, 0.6);
                     createDustBurst(pad.pos.x, pad.pos.y + 0.3, pad.pos.z, 12, 0xff3838);
                     playPadSound();
@@ -1152,221 +1251,161 @@
 
             isGrounded = false;
 
-            // Island Collision Detection (Continuous Vertical Ray + Solid Side Bounds)
+            // Collision Detection
             islands.forEach(island => {
                 if (island.type === 'block' || island.type === 'eraser' || island.type === 'pencil') {
-                    const expandedMinX = island.minX - BALL_RADIUS * 0.7;
-                    const expandedMaxX = island.maxX + BALL_RADIUS * 0.7;
-                    const expandedMinZ = island.minZ - BALL_RADIUS * 0.7;
-                    const expandedMaxZ = island.maxZ + BALL_RADIUS * 0.7;
+                    const expMinX = island.minX - BALL_RADIUS * 0.7; const expMaxX = island.maxX + BALL_RADIUS * 0.7;
+                    const expMinZ = island.minZ - BALL_RADIUS * 0.7; const expMaxZ = island.maxZ + BALL_RADIUS * 0.7;
 
-                    if (player.position.x >= expandedMinX && player.position.x <= expandedMaxX &&
-                        player.position.z >= expandedMinZ && player.position.z <= expandedMaxZ) {
+                    if (player.position.x >= expMinX && player.position.x <= expMaxX &&
+                        player.position.z >= expMinZ && player.position.z <= expMaxZ) {
 
-                        // Vertical top surface hit test
                         const topSurface = island.topY + BALL_RADIUS;
                         if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
-                            if (player.position.y < topSurface) {
-                                player.position.y = topSurface;
-                            }
-                            if (prevPos.y - player.position.y > 4) {
-                                ballSquish.set(1.3, 0.7, 1.3);
-                            }
-                            velocity.y = 0;
-                            isGrounded = true;
-                            coyoteTimer = 0.15;
-                            jumpsLeft = unlocks.maxJumps;
+                            if (player.position.y < topSurface) player.position.y = topSurface;
+                            if (prevPos.y - player.position.y > 4) ballSquish.set(1.3, 0.7, 1.3);
+                            velocity.y = 0; isGrounded = true; coyoteTimer = 0.15; jumpsLeft = unlocks.maxJumps;
                         } 
-                        // Horizontal side bounce/pushback (preventing side phase-through)
                         else if (player.position.y < island.topY + BALL_RADIUS * 0.6 && player.position.y > island.bottomY - BALL_RADIUS * 0.6) {
-                            const overlapLeft = player.position.x - island.minX;
-                            const overlapRight = island.maxX - player.position.x;
-                            const overlapFront = player.position.z - island.minZ;
-                            const overlapBack = island.maxZ - player.position.z;
-
-                            const minOverlap = Math.min(overlapLeft, overlapRight, overlapFront, overlapBack);
-
-                            if (minOverlap === overlapLeft) {
-                                player.position.x = island.minX - BALL_RADIUS;
-                                velocity.x = Math.min(0, velocity.x);
-                            } else if (minOverlap === overlapRight) {
-                                player.position.x = island.maxX + BALL_RADIUS;
-                                velocity.x = Math.max(0, velocity.x);
-                            } else if (minOverlap === overlapFront) {
-                                player.position.z = island.minZ - BALL_RADIUS;
-                                velocity.z = Math.min(0, velocity.z);
-                            } else if (minOverlap === overlapBack) {
-                                player.position.z = island.maxZ + BALL_RADIUS;
-                                velocity.z = Math.max(0, velocity.z);
-                            }
+                            const oL = player.position.x - island.minX, oR = island.maxX - player.position.x;
+                            const oF = player.position.z - island.minZ, oB = island.maxZ - player.position.z;
+                            const minOverlap = Math.min(oL, oR, oF, oB);
+                            if (minOverlap === oL) { player.position.x = island.minX - BALL_RADIUS; velocity.x = Math.min(0, velocity.x); }
+                            else if (minOverlap === oR) { player.position.x = island.maxX + BALL_RADIUS; velocity.x = Math.max(0, velocity.x); }
+                            else if (minOverlap === oF) { player.position.z = island.minZ - BALL_RADIUS; velocity.z = Math.min(0, velocity.z); }
+                            else if (minOverlap === oB) { player.position.z = island.maxZ + BALL_RADIUS; velocity.z = Math.max(0, velocity.z); }
                         }
                     }
                 } else if (island.type === 'tire' || island.type === 'ring') {
                     const dist = Math.sqrt(Math.pow(player.position.x - island.cx, 2) + Math.pow(player.position.z - island.cz, 2));
                     const isInsideRadius = (island.type === 'ring') ? (dist <= island.outerRadius) : (dist >= island.innerRadius && dist <= island.outerRadius);
-                    
                     if (isInsideRadius) {
                         const topSurface = island.topY + BALL_RADIUS;
                         if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
-                            player.position.y = topSurface;
-                            velocity.y = 0;
-                            isGrounded = true;
-                            coyoteTimer = 0.15;
-                            jumpsLeft = unlocks.maxJumps;
+                            player.position.y = topSurface; velocity.y = 0; isGrounded = true; coyoteTimer = 0.15; jumpsLeft = unlocks.maxJumps;
                         }
                     }
                 }
             });
 
-            // Moving Platform Collisions
             movingPlatforms.forEach(mp => {
-                const halfW = mp.width / 2;
-                const halfD = mp.depth / 2;
-                const topY = mp.mesh.position.y + mp.thickness / 2;
-                const bottomY = mp.mesh.position.y - mp.thickness / 2;
-                
-                const minX = mp.mesh.position.x - halfW;
-                const maxX = mp.mesh.position.x + halfW;
-                const minZ = mp.mesh.position.z - halfD;
-                const maxZ = mp.mesh.position.z + halfD;
+                const halfW = mp.width / 2, halfD = mp.depth / 2;
+                const topY = mp.mesh.position.y + mp.thickness / 2, bottomY = mp.mesh.position.y - mp.thickness / 2;
+                const minX = mp.mesh.position.x - halfW, maxX = mp.mesh.position.x + halfW;
+                const minZ = mp.mesh.position.z - halfD, maxZ = mp.mesh.position.z + halfD;
 
-                const expandedMinX = minX - BALL_RADIUS * 0.7;
-                const expandedMaxX = maxX + BALL_RADIUS * 0.7;
-                const expandedMinZ = minZ - BALL_RADIUS * 0.7;
-                const expandedMaxZ = maxZ + BALL_RADIUS * 0.7;
-
-                if (player.position.x >= expandedMinX && player.position.x <= expandedMaxX &&
-                    player.position.z >= expandedMinZ && player.position.z <= expandedMaxZ) {
+                if (player.position.x >= minX - BALL_RADIUS * 0.7 && player.position.x <= maxX + BALL_RADIUS * 0.7 &&
+                    player.position.z >= minZ - BALL_RADIUS * 0.7 && player.position.z <= maxZ + BALL_RADIUS * 0.7) {
                     
                     const topSurface = topY + BALL_RADIUS;
-                    // Detect landing on top surface or remaining on top surface
                     if (prevPos.y >= topY + BALL_RADIUS - 0.8 && player.position.y <= topSurface + 0.6 && velocity.y <= 1.0) {
                         player.position.y = topSurface;
                         if (velocity.y < 0) velocity.y = 0;
-                        isGrounded = true;
-                        coyoteTimer = 0.15;
-                        jumpsLeft = unlocks.maxJumps;
+                        isGrounded = true; coyoteTimer = 0.15; jumpsLeft = unlocks.maxJumps;
                         
-                        // Carry player smoothly scaled by physics sub-steps (3 sub-steps per frame)
                         if (mp.deltaPos) {
                             player.position.x += mp.deltaPos.x / 3;
                             player.position.y += mp.deltaPos.y / 3;
                             player.position.z += mp.deltaPos.z / 3;
                         }
                     } else if (player.position.y < topY + BALL_RADIUS * 0.6 && player.position.y > bottomY - BALL_RADIUS * 0.6) {
-                        // Side collision prevention against platform edges
-                        const overlapLeft = player.position.x - minX;
-                        const overlapRight = maxX - player.position.x;
-                        const overlapFront = player.position.z - minZ;
-                        const overlapBack = maxZ - player.position.z;
-
-                        const minOverlap = Math.min(overlapLeft, overlapRight, overlapFront, overlapBack);
-
-                        if (minOverlap === overlapLeft) {
-                            player.position.x = minX - BALL_RADIUS;
-                            velocity.x = Math.min(0, velocity.x);
-                        } else if (minOverlap === overlapRight) {
-                            player.position.x = maxX + BALL_RADIUS;
-                            velocity.x = Math.max(0, velocity.x);
-                        } else if (minOverlap === overlapFront) {
-                            player.position.z = minZ - BALL_RADIUS;
-                            velocity.z = Math.min(0, velocity.z);
-                        } else if (minOverlap === overlapBack) {
-                            player.position.z = maxZ + BALL_RADIUS;
-                            velocity.z = Math.max(0, velocity.z);
-                        }
+                        const oL = player.position.x - minX, oR = maxX - player.position.x;
+                        const oF = player.position.z - minZ, oB = maxZ - player.position.z;
+                        const minOverlap = Math.min(oL, oR, oF, oB);
+                        if (minOverlap === oL) { player.position.x = minX - BALL_RADIUS; velocity.x = Math.min(0, velocity.x); }
+                        else if (minOverlap === oR) { player.position.x = maxX + BALL_RADIUS; velocity.x = Math.max(0, velocity.x); }
+                        else if (minOverlap === oF) { player.position.z = minZ - BALL_RADIUS; velocity.z = Math.min(0, velocity.z); }
+                        else if (minOverlap === oB) { player.position.z = maxZ + BALL_RADIUS; velocity.z = Math.max(0, velocity.z); }
                     }
                 }
             });
 
-            // Checkpoint Detection
+            // Switches Trigger Logic
+            switches.forEach(sw => {
+                if (!coopSwitches[sw.id]) {
+                    const dist = Math.sqrt(Math.pow(player.position.x - sw.x, 2) + Math.pow(player.position.z - sw.z, 2));
+                    if (dist < 2.0 && Math.abs(player.position.y - sw.y) < 2.0) {
+                        coopSwitches[sw.id] = true;
+                        sw.mesh.material.color.setHex(0x2ecc71);
+                        sw.mesh.position.y = sw.startY - 0.2;
+                        playCollectSound();
+                        showToast("Switch Activated!");
+                        if (conn && conn.open) conn.send({ type: 'switch', id: sw.id });
+                    }
+                }
+            });
+
             checkpoints.forEach(cp => {
                 if (!cp.active) {
                     const dist = Math.sqrt(Math.pow(player.position.x - cp.x, 2) + Math.pow(player.position.z - cp.z, 2));
                     if (dist < 4.5 && Math.abs(player.position.y - cp.y) < 4.0) {
-                        cp.active = true;
-                        lastCheckpoint = { x: cp.x, y: cp.y, z: cp.z };
+                        cp.active = true; lastCheckpoint = { x: cp.x, y: cp.y, z: cp.z };
                         if (cp.flagMesh) cp.flagMesh.material.color.setHex(0x2ecc71);
                         createDustBurst(cp.x, cp.y, cp.z, 16, 0x2ecc71);
-                        playCollectSound();
-                        showToast(`🚩 Checkpoint Reached: ${cp.label}!`);
+                        playCollectSound(); showToast(`🚩 Checkpoint: ${cp.label}!`);
                     }
                 }
             });
 
-            // Crystals Pickups
             crystals.forEach((c, idx) => {
                 if (!c.collected) {
                     c.mesh.rotation.y += subDelta * 2;
                     c.mesh.position.y = c.initialY + Math.sin(now * 0.003 + idx) * 0.3;
-                    
-                    if (unlocks.magnet && player.position.distanceTo(c.mesh.position) < 15) {
-                        c.mesh.position.lerp(player.position, subDelta * 5);
-                    }
-
+                    if (unlocks.magnet && player.position.distanceTo(c.mesh.position) < 15) { c.mesh.position.lerp(player.position, subDelta * 5); }
                     if (player.position.distanceTo(c.mesh.position) < 2.5) {
-                        c.collected = true;
-                        scene.remove(c.mesh);
-                        crystalsCollected++;
-                        score += 250;
-                        coins += 50;
+                        c.collected = true; scene.remove(c.mesh); crystalsCollected++; score += 250; coins += 50;
                         saveProfile();
                         document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
                         document.getElementById('score').innerText = score;
                         document.getElementById('coins').innerText = coins;
-                        playCollectSound();
-                        showToast(`Crystal Collected! (+50 Coins)`);
-
-                        if (isMultiplayer && conn && conn.open) {
-                            conn.send({ type: 'collect_crystal', index: idx });
-                        }
+                        playCollectSound(); showToast(`Crystal Collected! (+50 Coins)`);
+                        if (isMultiplayer && conn && conn.open) conn.send({ type: 'collect_crystal', index: idx });
                     }
                 }
             });
 
-            // Secret Letters
             secretLetters.forEach(l => {
                 if (!l.collected) {
                     l.mesh.rotation.y += subDelta * 1.5;
                     if (player.position.distanceTo(l.mesh.position) < 2.5) {
-                        l.collected = true;
-                        scene.remove(l.mesh);
+                        l.collected = true; scene.remove(l.mesh);
                         if (!collectedLetters.includes(l.char)) {
-                            collectedLetters.push(l.char);
-                            updateLettersUI();
-                            score += 500;
-                            coins += 100;
-                            saveProfile();
-                            document.getElementById('coins').innerText = coins;
+                            collectedLetters.push(l.char); updateLettersUI(); score += 500; coins += 100;
+                            saveProfile(); document.getElementById('coins').innerText = coins;
                             showToast(`Letter '${l.char}' Found! (+100 Coins)`);
                         }
                     }
                 }
             });
 
-            // Portal Victory Check
             if (portal && player.position.distanceTo(portal.position) < 4.0) {
-                gameActive = false;
-                const totalSecs = Math.floor((Date.now() - startTime) / 1000);
-                const mins = String(Math.floor(totalSecs / 60)).padStart(2, '0');
-                const secs = String(totalSecs % 60).padStart(2, '0');
-                document.getElementById('final-time').innerText = `${mins}:${secs}`;
-                document.getElementById('final-score').innerText = score + (crystalsCollected * 500);
-                document.getElementById('hud').style.display = 'none';
-                document.getElementById('overlay').style.display = 'flex';
-                document.getElementById('start-card').classList.add('hidden');
-                document.getElementById('victory-card').classList.remove('hidden');
-                showToast("LEVEL COMPLETE!");
+                if (isMultiplayer) {
+                    if (player2 && player2.position.distanceTo(portal.position) < 8.0) {
+                        triggerVictory();
+                    }
+                } else {
+                    triggerVictory();
+                }
             }
 
-            // Fall Off Map Check
-            if (player.position.y < -30) {
-                respawnPlayer();
-            }
+            if (player.position.y < -30) respawnPlayer();
+        }
+
+        function triggerVictory() {
+            gameActive = false;
+            const totalSecs = Math.floor((Date.now() - startTime) / 1000);
+            const mins = String(Math.floor(totalSecs / 60)).padStart(2, '0');
+            const secs = String(totalSecs % 60).padStart(2, '0');
+            document.getElementById('final-time').innerText = `${mins}:${secs}`;
+            document.getElementById('final-score').innerText = score + (crystalsCollected * 500);
+            document.getElementById('hud').style.display = 'none';
+            document.getElementById('overlay').style.display = 'flex';
+            document.getElementById('start-card').classList.add('hidden');
+            document.getElementById('victory-card').classList.remove('hidden');
+            showToast("LEVEL COMPLETE!");
         }
 
         function updatePhysics(delta) {
-            // Split frame step into 3 sub-steps for solid precision against fast velocity clipping
             const subSteps = 3;
             const subDelta = delta / subSteps;
             for (let s = 0; s < subSteps; s++) {
@@ -1381,16 +1420,22 @@
             const now = Date.now();
 
             if (gameActive) {
-                // Update Moving Platforms
                 movingPlatforms.forEach(mp => {
                     const prevX = mp.mesh.position.x;
                     const prevY = mp.mesh.position.y;
                     const prevZ = mp.mesh.position.z;
 
-                    const t = (Math.sin(now * 0.001 * mp.speed) + 1) / 2;
-                    mp.mesh.position.x = THREE.MathUtils.lerp(mp.startX, mp.endX, t);
-                    mp.mesh.position.y = THREE.MathUtils.lerp(mp.startY, mp.endY, t);
-                    mp.mesh.position.z = THREE.MathUtils.lerp(mp.startZ, mp.endZ, t);
+                    if (mp.triggerId) {
+                        // Co-op triggered platform (Door/Bridge)
+                        const targetPos = coopSwitches[mp.triggerId] ? new THREE.Vector3(mp.endX, mp.endY, mp.endZ) : new THREE.Vector3(mp.startX, mp.startY, mp.startZ);
+                        mp.mesh.position.lerp(targetPos, 0.05); // Smoothly slide open/closed
+                    } else {
+                        // Standard oscillating platform
+                        const t = (Math.sin(now * 0.001 * mp.speed) + 1) / 2;
+                        mp.mesh.position.x = THREE.MathUtils.lerp(mp.startX, mp.endX, t);
+                        mp.mesh.position.y = THREE.MathUtils.lerp(mp.startY, mp.endY, t);
+                        mp.mesh.position.z = THREE.MathUtils.lerp(mp.startZ, mp.endZ, t);
+                    }
 
                     mp.deltaPos.set(
                         mp.mesh.position.x - prevX,
@@ -1404,24 +1449,17 @@
 
                 if (portalRing) portalRing.rotation.z += delta * 1.5;
 
-                // Update Timer Display
                 const elapsedSecs = Math.floor((now - startTime) / 1000);
                 const mins = String(Math.floor(elapsedSecs / 60)).padStart(2, '0');
                 const secs = String(elapsedSecs % 60).padStart(2, '0');
                 document.getElementById('timer').innerText = `${mins}:${secs}`;
 
-                // Smooth Camera Tracking
                 if (player) {
-                    const targetCamPos = new THREE.Vector3(
-                        player.position.x,
-                        player.position.y + 14,
-                        player.position.z + 24
-                    );
+                    const targetCamPos = new THREE.Vector3(player.position.x, player.position.y + 14, player.position.z + 24);
                     camera.position.lerp(targetCamPos, 0.1);
                     camera.lookAt(player.position.x, player.position.y + 1, player.position.z);
                 }
 
-                // Dynamic Shadow Positioning
                 if (shadowMesh && player) {
                     shadowMesh.position.x = player.position.x;
                     shadowMesh.position.z = player.position.z;
@@ -1438,8 +1476,7 @@
                     });
 
                     movingPlatforms.forEach(mp => {
-                        const halfW = mp.width / 2;
-                        const halfD = mp.depth / 2;
+                        const halfW = mp.width / 2; const halfD = mp.depth / 2;
                         const topY = mp.mesh.position.y + mp.thickness / 2;
                         if (player.position.x >= mp.mesh.position.x - halfW && player.position.x <= mp.mesh.position.x + halfW &&
                             player.position.z >= mp.mesh.position.z - halfD && player.position.z <= mp.mesh.position.z + halfD &&
@@ -1475,7 +1512,6 @@
             }
             if (backMpBtn) {
                 backMpBtn.onclick = () => {
-                    document.getElementById('multiplayer-card').classList.hidden = false;
                     document.getElementById('multiplayer-card').classList.add('hidden');
                     document.getElementById('start-card').classList.remove('hidden');
                 };
@@ -1487,16 +1523,17 @@
                     document.getElementById('mp-status').innerText = "Creating room...";
                     peer.on('open', id => {
                         document.getElementById('room-id-display').innerText = id;
-                        document.getElementById('mp-status').innerText = "Waiting for player 2...";
+                        document.getElementById('mp-status').innerText = "Waiting for partner...";
                         isMultiplayer = true;
                         isHost = true;
-                        createPlayer2();
                     });
                     peer.on('connection', connection => {
                         conn = connection;
-                        document.getElementById('mp-status').innerText = "Connected! Starting game...";
+                        document.getElementById('mp-status').innerText = "Connected! Starting Co-op Map...";
                         setupMultiplayerEvents();
-                        setTimeout(() => { startNewGame(false); }, 1000);
+                        conn.on('open', () => {
+                            setTimeout(() => { startNewGame(false, true); }, 1000);
+                        });
                     });
                 };
             }
@@ -1510,12 +1547,11 @@
                     peer.on('open', () => {
                         conn = peer.connect(joinId);
                         conn.on('open', () => {
-                            document.getElementById('mp-status').innerText = "Connected! Joining game...";
+                            document.getElementById('mp-status').innerText = "Connected! Joining Co-op Map...";
                             isMultiplayer = true;
                             isHost = false;
-                            createPlayer2();
                             setupMultiplayerEvents();
-                            setTimeout(() => { startNewGame(false); }, 1000);
+                            setTimeout(() => { startNewGame(false, true); }, 1000);
                         });
                     });
                 };
@@ -1526,12 +1562,12 @@
             loadProfile();
             initScene();
             setupControls();
-            createWorld();
+            createSoloWorld(); // Load default background world
             createPlayer();
             initMultiplayer();
 
-            document.getElementById('start-normal-btn').onclick = () => startNewGame(false);
-            document.getElementById('start-hardcore-btn').onclick = () => startNewGame(true);
+            document.getElementById('start-normal-btn').onclick = () => startNewGame(false, false);
+            document.getElementById('start-hardcore-btn').onclick = () => startNewGame(true, false);
             document.getElementById('open-shop-btn').onclick = () => {
                 renderShop();
                 document.getElementById('start-card').classList.add('hidden');
@@ -1546,7 +1582,6 @@
                 document.getElementById('start-card').classList.remove('hidden');
             };
             
-            // Start the animation loop
             animate();
         };
     </script>
