@@ -924,55 +924,58 @@
         }
 
         function createCoopWorld() {
-            // Room 1: The High Ledge - Requires bouncing off partner!
-            createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
-            createCheckpoint(0, 1, 0, "Co-op Start");
-            spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
+            // Room 1: The Elevator Lift - P1 bounces on P2, then lifts P2 up!
+            createBlock(0, 0, 10, 30, 2, 20, 0x2ecc71);
+            createCheckpoint(0, 1, 10, "Co-op Start");
+            spawnCrystals(0, 1.8, 10, 3, 'circle', 8);
 
-            // Tall wall impossible to reach without using the other player as a trampoline
-            createBlock(0, 12, -25, 20, 2, 20, 0x3498db); 
-            createCoopSwitch(0, 13, -25, 'switch1'); 
-            spawnSecretLetter("C", 0, 14, -30);
+            // High Ledge - Requires partner bounce to reach!
+            createBlock(0, 14, -20, 20, 2, 20, 0x3498db); 
+            createCoopSwitch(0, 15, -20, 'switch1'); 
+            spawnSecretLetter("C", 0, 16, -25);
 
-            // Door that blocks the bottom path, opens when top player hits switch
-            createMovingPlatform(0, 6, -45, 0, -10, -45, 20, 12, 20, 0, 'switch1');
+            // Elevator that brings P2 up when P1 hits the switch!
+            // Player 2 stands on this block. Player 1 bounces on P2 to reach the ledge above.
+            createMovingPlatform(0, 0, -5, 0, 14, -5, 10, 2, 10, 0, 'switch1');
 
-            // Room 2: Split Paths
-            createBlock(0, 0, -75, 40, 2, 20, 0x9b59b6);
-            createCheckpoint(0, 1, -75, "Split Decision");
+            // Room 2: The Sliding Bridges
+            createBlock(0, 14, -50, 30, 2, 30, 0x9b59b6);
+            createCheckpoint(0, 15, -50, "The Gap");
 
-            // Path A (High Platform)
-            createBlock(-20, 15, -100, 10, 2, 20, 0xf1c40f);
-            createCoopSwitch(-20, 16, -105, 'switch2');
-            spawnCrystals(-20, 17, -95, 2, 'z');
+            // Player 1 hits Switch 2 on the left side
+            createBlock(-12, 14.5, -60, 6, 3, 6, 0xf1c40f);
+            createCoopSwitch(-12, 16, -60, 'switch2');
 
-            // Path B (Low Platform)
-            createBlock(20, 0, -100, 10, 2, 20, 0xe67e22);
-            createCoopSwitch(20, 1, -105, 'switch3');
-            spawnCrystals(20, 2, -95, 2, 'z');
+            // Bridge A slides in from the left
+            createMovingPlatform(-40, 14, -85, 0, 14, -85, 10, 2, 40, 0, 'switch2');
 
-            // Bridge A opens for Path B (Low)
-            createMovingPlatform(20, -10, -130, 20, 0, -130, 10, 2, 30, 0, 'switch2');
+            // Middle Island
+            createBlock(0, 14, -115, 20, 2, 20, 0xe67e22);
+            spawnCrystals(0, 15, -115, 3, 'circle', 6);
 
-            // Bridge B opens for Path A (High)
-            createMovingPlatform(-20, -10, -130, -20, 15, -130, 10, 2, 30, 0, 'switch3');
+            // Switch 3 on the right side
+            createBlock(8, 14.5, -125, 6, 3, 6, 0xf1c40f);
+            createCoopSwitch(8, 16, -125, 'switch3');
+
+            // Bridge B slides in from the right
+            createMovingPlatform(40, 14, -145, 0, 14, -145, 10, 2, 40, 0, 'switch3');
 
             // Room 3: Reunion and Bouncy Challenge
-            createBlock(0, 8, -170, 50, 2, 30, 0x2ecc71);
-            createCheckpoint(0, 9, -170, "Reunion");
-            spawnSecretLetter("O", 0, 10, -170);
+            createBlock(0, 14, -185, 40, 2, 30, 0x2ecc71);
+            createCheckpoint(0, 15, -185, "Bounce Together");
+            spawnSecretLetter("O", 0, 16, -185);
 
-            createTire(-10, 15, -210, 8);
-            createTire(10, 20, -230, 8);
-            createJumpPad(10, 20.5, -230, -40, 60, -30);
+            createTire(-10, 20, -215, 8);
+            createTire(10, 30, -245, 8);
+            createJumpPad(10, 30.5, -245, -40, 60, -30);
 
             // Final Stretch
-            createBlock(-30, 45, -270, 30, 2, 30, 0x3498db);
-            createCheckpoint(-30, 46, -270, "The Duo Zenith");
-            spawnSecretLetter("O", -30, 48, -260);
-            spawnCrystals(-30, 47, -270, 5, 'circle', 8);
+            createBlock(-30, 55, -285, 30, 2, 30, 0x3498db);
+            createCheckpoint(-30, 56, -285, "The Duo Zenith");
+            spawnSecretLetter("P", -30, 57, -275);
+            spawnCrystals(-30, 56, -285, 5, 'circle', 8);
 
-            buildPortal(-30, 48, -270);
+            buildPortal(-30, 57, -285);
             TOTAL_CRYSTALS = crystals.length;
         }
 
