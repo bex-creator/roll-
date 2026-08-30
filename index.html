@@ -399,14 +399,6 @@
                             scene.remove(crystals[data.index].mesh);
                         }
                     }
-                } else if (data.type === 'switch') {
-                    // Partner activated a switch!
-                    coopSwitches[data.id] = true;
-                    const sw = switches.find(s => s.id === data.id);
-                    if (sw) {
-                        sw.mesh.material.color.setHex(0x2ecc71); // Turn Green
-                        sw.mesh.position.y = sw.startY - 0.2; // Press down visually
-                    }
                 }
             });
         }
@@ -1325,15 +1317,27 @@
 
             // Switches Trigger Logic
             switches.forEach(sw => {
-                if (!coopSwitches[sw.id]) {
-                    const dist = Math.sqrt(Math.pow(player.position.x - sw.x, 2) + Math.pow(player.position.z - sw.z, 2));
-                    if (dist < 2.0 && Math.abs(player.position.y - sw.y) < 2.0) {
-                        coopSwitches[sw.id] = true;
-                        sw.mesh.material.color.setHex(0x2ecc71);
-                        sw.mesh.position.y = sw.startY - 0.2;
+                const dist1 = Math.sqrt(Math.pow(player.position.x - sw.x, 2) + Math.pow(player.position.z - sw.z, 2));
+                const yDiff1 = Math.abs(player.position.y - sw.y);
+                let isPressed = (dist1 < 2.2 && yDiff1 < 3.0);
+
+                if (isMultiplayer && player2) {
+                    const dist2 = Math.sqrt(Math.pow(player2.position.x - sw.x, 2) + Math.pow(player2.position.z - sw.z, 2));
+                    const yDiff2 = Math.abs(player2.position.y - sw.y);
+                    if (dist2 < 2.2 && yDiff2 < 3.0) isPressed = true;
+                }
+
+                if (isPressed !== sw.active) {
+                    sw.active = isPressed;
+                    coopSwitches[sw.id] = isPressed;
+                    
+                    if (isPressed) {
+                        sw.mesh.material.color.setHex(0x2ecc71); // Turn Green
+                        sw.mesh.position.y = sw.startY - 0.2; // Press down
                         playCollectSound();
-                        showToast("Switch Activated!");
-                        if (conn && conn.open) conn.send({ type: 'switch', id: sw.id });
+                    } else {
+                        sw.mesh.material.color.setHex(0xe74c3c); // Turn Red
+                        sw.mesh.position.y = sw.startY; // Release up
                     }
                 }
             });
