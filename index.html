@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sky Realm 3D Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #fdfbf7;
+            background-image: 
+                linear-gradient(90deg, transparent 79px, #ff9999 79px, #ff9999 81px, transparent 81px),
+                linear-gradient(#e1e8ed 1px, transparent 1px);
+            background-size: 100% 30px;
+            font-family: 'Patrick Hand', cursive;
+            user-select: none;
+        }
+        
+        .font-fredoka { font-family: 'Patrick Hand', cursive; letter-spacing: 2px; text-transform: uppercase; }
+
+        #hud {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 20px; box-sizing: border-box; z-index: 10;
+        }
+
+        .hud-card {
+            background: #ffffff; border: 4px solid #000000; box-shadow: 6px 6px 0px #000000;
+            border-radius: 2px 15px 3px 15px / 15px 3px 15px 2px; pointer-events: auto;
+        }
+
+        .btn-action {
+            transition: transform 0.1s; pointer-events: auto; border: 4px solid #000;
+            box-shadow: 6px 6px 0px #000; border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+        }
+        .btn-action:hover { transform: translate(-2px, -2px) scale(1.02); box-shadow: 8px 8px 0px #000; }
+        .btn-action:active { transform: translate(4px, 4px); box-shadow: 2px 2px 0px #000; }
+
+        #overlay {
+            position: absolute; inset: 0; background: rgba(253, 251, 247, 0.8);
+            backdrop-filter: blur(4px); z-index: 50; display: flex; justify-content: center; align-items: center;
+        }
+
+        .touch-btn {
+            background: #ffffff; border: 4px solid #000; box-shadow: 4px 4px 0px #000;
+            border-radius: 10px 25px 15px 20px; touch-action: manipulation; color: #000;
+        }
+        .touch-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0px #000; }
+
+        #toast {
+            position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+            background: #ffeaa7; color: #000; padding: 10px 24px;
+            border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;
+            font-weight: 800; font-size: 1.5rem; pointer-events: none;
+            opacity: 0; transition: opacity 0.2s ease; z-index: 20;
+            border: 4px solid #000; box-shadow: 6px 6px 0px #000;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toast">Collect all crystals to unlock the Sky Portal!</div>
+
+    <div id="hud" style="display: none;">
+        <!-- Top Stats Bar -->
+        <div class="flex flex-wrap justify-between items-center w-full max-w-5xl mx-auto gap-2">
+            <div class="hud-card px-3 py-2 flex items-center space-x-2">
+                <div class="w-8 h-8 flex items-center justify-center text-xl font-bold">💎</div>
+                <div>
+                    <div class="text-xs font-bold text-black tracking-wider">Crystals</div>
+                    <div class="text-xl font-fredoka text-black" id="crystal-count">0 / ?</div>
+                </div>
+            </div>
+
+            <div class="hud-card px-3 py-2 flex items-center space-x-2">
+                <div class="w-8 h-8 flex items-center justify-center text-xl font-bold">🪙</div>
+                <div>
+                    <div class="text-xs font-bold text-black tracking-wider">Coins</div>
+                    <div class="text-xl font-fredoka text-black" id="coins">0</div>
+                </div>
+            </div>
+
+            <div class="hud-card px-3 py-2 flex items-center space-x-2">
+                <div class="w-8 h-8 flex items-center justify-center text-xl font-bold">📝</div>
+                <div>
+                    <div class="text-xs font-bold text-black tracking-wider">Letters</div>
+                    <div class="text-xl font-fredoka text-black tracking-widest" id="doodle-letters">______</div>
+                </div>
+            </div>
+
+            <div class="hud-card px-3 py-2 flex items-center space-x-2 hidden sm:flex">
+                <div class="w-8 h-8 flex items-center justify-center text-xl font-bold">⏱️</div>
+                <div>
+                    <div class="text-xs font-bold text-black tracking-wider">Time</div>
+                    <div class="text-xl font-fredoka text-black" id="timer">00:00</div>
+                </div>
+            </div>
+
+            <div class="hud-card px-3 py-2 flex items-center space-x-2 hidden sm:flex">
+                <div class="w-8 h-8 flex items-center justify-center text-xl font-bold">⭐</div>
+                <div>
+                    <div class="text-xs font-bold text-black tracking-wider">Score</div>
+                    <div class="text-xl font-fredoka text-black" id="score">0</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Hint / Mobile Touch Pad -->
+        <div class="flex justify-between items-end w-full max-w-5xl mx-auto mb-2 mt-auto pointer-events-none">
+            <div class="hidden sm:block hud-card p-4 text-black text-xl font-bold pointer-events-auto">
+                <div class="font-fredoka text-2xl text-black underline mb-1">🎮 Controls</div>
+                <p>• WASD / Arrows : Roll</p>
+                <p>• Spacebar : Jump</p>
+                <p>• Shift : Boost</p>
+                <p>• Red Pads = BIG JUMP!</p>
+            </div>
+
+            <!-- Mobile Touch Controls -->
+            <div class="sm:hidden flex justify-between w-full px-2 mb-4 pointer-events-auto">
+                <div class="grid grid-cols-3 gap-2 w-32 h-32">
+                    <div></div>
+                    <button id="btn-up" class="touch-btn rounded-xl flex items-center justify-center text-2xl font-bold">▲</button>
+                    <div></div>
+                    <button id="btn-left" class="touch-btn rounded-xl flex items-center justify-center text-2xl font-bold">◄</button>
+                    <button id="btn-down" class="touch-btn rounded-xl flex items-center justify-center text-2xl font-bold">▼</button>
+                    <button id="btn-right" class="touch-btn rounded-xl flex items-center justify-center text-2xl font-bold">►</button>
+                </div>
+                <div class="flex flex-col space-y-2 justify-end">
+                    <button id="btn-jump" class="touch-btn w-16 h-16 flex items-center justify-center text-xl font-bold bg-yellow-300">JUMP</button>
+                    <button id="btn-boost" class="touch-btn w-16 h-12 flex items-center justify-center text-sm font-bold bg-blue-300">BOOST</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Start / Victory Screen Overlay -->
+    <div id="overlay">
+        <!-- Start Menu -->
+        <div id="start-card" class="bg-white p-8 max-w-md w-full mx-4 text-center border-4 border-black shadow-[10px_10px_0px_rgba(0,0,0,1)]" style="border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;">
+            <div class="text-6xl mb-3 animate-bounce">✏️</div>
+            <h1 class="text-5xl font-fredoka text-black mb-2 underline">SKY DOODLE 3D</h1>
+            <p class="text-black font-bold text-xl mb-4">Climb the notebook tower and collect the crystals!</p>
+            
+            <div id="new-game-btns" class="space-y-3 mb-4">
+                <button id="start-normal-btn" class="btn-action w-full py-3 bg-blue-300 text-black font-fredoka text-xl">PLAY NORMAL</button>
+                <button id="start-hardcore-btn" class="btn-action w-full py-3 bg-red-400 text-black font-fredoka text-xl">PLAY HARDCORE (Permadeath)</button>
+                <button id="multiplayer-menu-btn" class="btn-action w-full py-3 bg-purple-300 text-black font-fredoka text-xl">🤝 CO-OP MULTIPLAYER</button>
+                <button id="open-shop-btn" class="btn-action w-full py-3 bg-pink-300 text-black font-fredoka text-xl mt-2">🛒 OPEN DOODLE SHOP</button>
+            </div>
+            
+            <button id="continue-btn" class="btn-action w-full py-3 bg-yellow-300 text-black font-fredoka text-xl hidden mt-2">CONTINUE CLIMBING</button>
+        </div>
+
+        <!-- Multiplayer Card -->
+        <div id="multiplayer-card" class="hidden bg-white p-8 max-w-md w-full mx-4 text-center border-4 border-black shadow-[10px_10px_0px_rgba(0,0,0,1)]" style="border-radius: 255px 15px 225px 15px/15px 225px 15px 255px;">
+            <div class="text-6xl mb-3">🤝</div>
+            <h1 class="text-4xl font-fredoka text-black mb-4">CO-OP CLIMB</h1>
+            <p class="text-gray-600 mb-4 font-bold">Work together to reach the top!</p>
+            
+            <div class="bg-gray-100 p-4 border-2 border-black rounded-xl mb-4">
+                <button id="host-btn" class="btn-action w-full py-2 bg-green-300 text-black font-fredoka text-lg mb-2">HOST GAME</button>
+                <p class="font-bold text-sm">Room ID: <span id="room-id-display" class="bg-white px-2 py-1 border border-black rounded select-all">Click Host...</span></p>
+            </div>
+
+            <div class="bg-gray-100 p-4 border-2 border-black rounded-xl mb-6">
+                <input type="text" id="join-id-input" placeholder="Paste Room ID here" class="w-full p-2 border-2 border-black rounded mb-2 font-bold text-center">
+                <button id="join-btn" class="btn-action w-full py-2 bg-blue-300 text-black font-fredoka text-lg">JOIN GAME</button>
+            </div>
+            <p id="mp-status" class="text-sm font-bold text-purple-600 mb-2 h-4"></p>
+            <button id="back-mp-btn" class="btn-action w-full py-2 bg-gray-300 text-black font-fredoka text-lg">BACK</button>
+        </div>
+
+        <!-- Shop Card -->
+        <div id="shop-card" class="hidden bg-white p-8 max-w-md w-full mx-4 text-center border-4 border-black shadow-[10px_10px_0px_rgba(0,0,0,1)]" style="border-radius: 15px 255px 15px 225px/225px 15px 255px 15px;">
+            <div class="text-6xl mb-3 animate-pulse">🛒</div>
+            <h1 class="text-5xl font-fredoka text-black mb-2 underline">DOODLE SHOP</h1>
+            <p class="text-black font-bold text-2xl mb-4">Coins: 🪙 <span id="shop-coins-display">0</span></p>
+
+            <div id="shop-items-container" class="space-y-3 mb-6 h-64 overflow-y-auto pr-2" style="border: 2px solid black; padding: 10px; border-radius: 10px; background: #fdfbf7;">
+                <!-- Dynamically populated -->
+            </div>
+
+            <button id="close-shop-btn" class="btn-action w-full py-3 bg-gray-300 text-black font-fredoka text-xl">BACK TO MENU</button>
+        </div>
+
+        <!-- Victory Card -->
+        <div id="victory-card" class="hidden bg-white p-8 max-w-md w-full mx-4 text-center border-4 border-black shadow-[10px_10px_0px_rgba(0,0,0,1)]" style="border-radius: 15px 225px 15px 255px/255px 15px 225px 15px;">
+            <div class="text-6xl mb-3 animate-pulse">👑</div>
+            <h1 class="text-5xl font-fredoka text-black mb-2">YOU WIN!</h1>
+            <p class="text-black font-bold text-xl mb-4">You reached the Zenith!</p>
+            
+            <div class="bg-gray-100 p-4 border-2 border-black mb-6 space-y-2 text-left rounded-xl">
+                <div class="flex justify-between font-bold text-xl text-black"><span>Time:</span><span id="final-time">00:00</span></div>
+                <div class="flex justify-between font-bold text-xl text-black"><span>Score:</span><span id="final-score">0</span></div>
+            </div>
+
+            <button id="restart-btn" class="btn-action w-full py-4 bg-green-400 text-black font-fredoka text-2xl">PLAY AGAIN</button>
+        </div>
+    </div>
+
+    <script>
+        // THREE.js Core
+        let scene, camera, renderer, player, shadowMesh;
+        
+        // Game Entities arrays
+        let islands = [], crystals = [], jumpPads = [], movingPlatforms = [];
+        let coffeePuddles = [], thumbtacks = [], airplanes = [], windCurrents = [], secretLetters = [];
+        let trailPositions = [], trailLine = null;
+        let portal, portalRing;
+
+        // Global State variables
+        let clock = new THREE.Clock();
+        let gameActive = false;
+        let score = 0, crystalsCollected = 0, TOTAL_CRYSTALS = 0;
+        let startTime = 0, elapsedTime = 0, lastPadHitTime = 0, saveInterval = null, toastTimeout = null;
+        let isHardcore = false, lastCheckpoint = { x: 0, y: 5, z: 0 };
+        let collectedLetters = [];
+        const DOODLE_WORD = "DOODLE";
+
+        // Physics & Controls
+        let keys = { forward: false, backward: false, left: false, right: false, jump: false, boost: false };
+        let velocity = new THREE.Vector3();
+        let isGrounded = false, jumpsLeft = 2, canJump = true;
+        const GRAVITY = 38;
+
+        // Audio
+        let chimeSynth, bounceSynth, padSynth, audioStarted = false;
+
+        // Shop & Global Progression
+        let coins = 0;
+        let unlocks = {
+            color: 0xff3366, skin: 'normal', trail: 'none', magnet: false, maxJumps: 2, ownedItems: []
+        };
+        const shopItems = [
+            { id: 'ink_blue', type: 'color', value: 0x3498db, cost: 1000, name: 'Blue Ink', colorClass: 'bg-blue-300' },
+            { id: 'ink_gold', type: 'color', value: 0xf1c40f, cost: 2500, name: 'Gold Ink', colorClass: 'bg-yellow-400' },
+            { id: 'ink_purple', type: 'color', value: 0x9b59b6, cost: 2500, name: 'Purple Ink', colorClass: 'bg-purple-400' },
+            { id: 'ink_dark', type: 'color', value: 0x333333, cost: 3500, name: 'Void Ink', colorClass: 'bg-gray-400' },
+            { id: 'upg_jump', type: 'maxJumps', value: 3, cost: 5000, name: 'Triple Jump 🚀', colorClass: 'bg-green-400' },
+            { id: 'upg_magnet', type: 'magnet', value: true, cost: 3000, name: 'Coin Magnet 🧲', colorClass: 'bg-blue-200' },
+            { id: 'trail_rainbow', type: 'trail', value: 'rainbow', cost: 2000, name: 'Rainbow Trail 🌈', colorClass: 'bg-red-200' },
+            { id: 'skin_paper', type: 'skin', value: 'paper', cost: 4000, name: 'Paper Ball 📄', colorClass: 'bg-white' }
+        ];
+
+        // Multiplayer P2P
+        let peer = null, conn = null, isMultiplayer = false, player2 = null, isHost = false;
+
+        // --- HELPER FUNCTIONS ---
+        function addSketchOutline(mesh, thickness = 2) {
+            const edges = new THREE.EdgesGeometry(mesh.geometry);
+            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0x000000, linewidth: thickness }));
+            mesh.add(line);
+        }
+
+        // --- INITIALIZATION ---
+        function initScene() {
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0xffffff, 0.003); // Fades to paper color
+            
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1500);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setClearColor(0x000000, 0); // Transparent to show CSS bg
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            scene.add(new THREE.AmbientLight(0xffffff, 0.75));
+            const sunLight = new THREE.DirectionalLight(0xfffbf0, 1.0);
+            sunLight.position.set(300, 900, 100); 
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 1800;
+            const d = 500;
+            sunLight.shadow.camera.left = -d; sunLight.shadow.camera.right = d;
+            sunLight.shadow.camera.top = d; sunLight.shadow.camera.bottom = -d;
+            scene.add(sunLight);
+
+            createClouds();
+        }
+
+        function createClouds() {
+            const cloudGeo = new THREE.DodecahedronGeometry(8, 0); 
+            const cloudMat = new THREE.MeshToonMaterial({ color: 0xffffff });
+            for (let i = 0; i < 120; i++) {
+                const cloudGroup = new THREE.Group();
+                const numSpheres = 3 + Math.floor(Math.random() * 4);
+                for (let j = 0; j < numSpheres; j++) {
+                    const cloudMesh = new THREE.Mesh(cloudGeo, cloudMat);
+                    addSketchOutline(cloudMesh);
+                    cloudMesh.position.set((Math.random()-0.5)*14, (Math.random()-0.5)*5, (Math.random()-0.5)*14);
+                    const scale = 0.6 + Math.random() * 0.8;
+                    cloudMesh.scale.set(scale, scale, scale);
+                    cloudGroup.add(cloudMesh);
+                }
+                cloudGroup.position.set((Math.random()-0.5)*800, -25 + Math.random()*700, (Math.random()-0.5)*1200 - 200);
+                scene.add(cloudGroup);
+            }
+        }
+
+        function createPlayer() {
+            if (player) scene.remove(player);
+            
+            let playerGeo = unlocks.skin === 'paper' ? new THREE.DodecahedronGeometry(1.2, 0) : new THREE.IcosahedronGeometry(1.2, 1);
+            let playerMat = new THREE.MeshToonMaterial({ color: unlocks.color });
+            
+            player = new THREE.Mesh(playerGeo, playerMat);
+            player.castShadow = true; player.receiveShadow = true;
+            player.position.set(0, 5, 0);
+            addSketchOutline(player);
+            scene.add(player);
+
+            if (unlocks.skin !== 'paper') {
+                const ringGeo = new THREE.TorusGeometry(1.4, 0.1, 4, 12);
+                const ringMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+                const ring = new THREE.Mesh(ringGeo, ringMat);
+                ring.rotation.x = Math.PI / 2;
+                player.add(ring);
+            }
+
+            if (!shadowMesh) {
+                const shadowGeo = new THREE.RingGeometry(0.2, 1.2, 8);
+                const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+                shadowMesh = new THREE.Mesh(shadowGeo, shadowMat);
+                shadowMesh.rotation.x = Math.PI / 2;
+                scene.add(shadowMesh);
+            }
+
+            // Trails
+            if (trailLine) scene.remove(trailLine);
+            if (unlocks.trail === 'rainbow') {
+                const trailMat = new THREE.LineBasicMaterial({ color: 0xffaaff, linewidth: 4 });
+                const trailGeo = new THREE.BufferGeometry();
+                trailLine = new THREE.Line(trailGeo, trailMat);
+                scene.add(trailLine);
+            }
+        }
+
+        function createPlayer2() {
+            if (player2) scene.remove(player2);
+            const p2Geo = new THREE.IcosahedronGeometry(1.2, 1);
+            const p2Mat = new THREE.MeshToonMaterial({ color: 0x3498db, transparent: true, opacity: 0.7 });
+            player2 = new THREE.Mesh(p2Geo, p2Mat);
+            player2.castShadow = true;
+            player2.position.set(0, -100, 0); // Hide until sync
+            scene.add(player2);
+        }
+
+        // --- LEVEL BUILDING FUNCTIONS ---
+        function createBlock(x, y, z, width, height, depth, color = 0x2ecc71, isSticky = false, isRuler = false) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            const box = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), new THREE.MeshToonMaterial({ color: color }));
+            box.receiveShadow = true; box.castShadow = true;
+            addSketchOutline(box);
+            group.add(box);
+            scene.add(group);
+            group.updateMatrixWorld(true);
+
+            islands.push({
+                type: 'block', cx: x, cz: z, mesh: group,
+                minX: x - width/2, maxX: x + width/2, minZ: z - depth/2, maxZ: z + depth/2,
+                topY: y + height/2, isSticky: isSticky, isRuler: isRuler, startX: x, startZ: z, initialTopY: y + height/2
+            });
+            return group;
+        }
+
+        function createTire(x, y, z, radius = 5) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            const mesh = new THREE.Mesh(new THREE.TorusGeometry(radius, radius*0.4, 8, 16), new THREE.MeshToonMaterial({ color: 0x333333 }));
+            mesh.rotation.x = Math.PI / 2;
+            addSketchOutline(mesh);
+            mesh.receiveShadow = true; mesh.castShadow = true;
+            group.add(mesh);
+            scene.add(group);
+            group.updateMatrixWorld(true);
+
+            islands.push({
+                type: 'tire', cx: x, cz: z, mesh: group,
+                outerRadius: radius * 1.4, innerRadius: radius * 0.6,
+                topY: y + (radius * 0.4)
+            });
+            return group;
+        }
+
+        function createEraser(x, y, z, length = 12, isRotated = false) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            const w = isRotated ? length : 8, d = isRotated ? 8 : length, h = 3;
+
+            const m1 = new THREE.Mesh(new THREE.BoxGeometry(isRotated?w/2:w, h, isRotated?d:d/2), new THREE.MeshToonMaterial({ color: 0xffa8c5 }));
+            m1.position.z = isRotated ? 0 : d/4; m1.position.x = isRotated ? -w/4 : 0;
+            addSketchOutline(m1); m1.receiveShadow = true; m1.castShadow = true; group.add(m1);
+
+            const m2 = new THREE.Mesh(new THREE.BoxGeometry(isRotated?w/2:w, h, isRotated?d:d/2), new THREE.MeshToonMaterial({ color: 0x3498db }));
+            m2.position.z = isRotated ? 0 : -d/4; m2.position.x = isRotated ? w/4 : 0;
+            addSketchOutline(m2); m2.receiveShadow = true; m2.castShadow = true; group.add(m2);
+
+            scene.add(group);
+            group.updateMatrixWorld(true);
+
+            islands.push({
+                type: 'eraser', cx: x, cz: z, mesh: group,
+                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + h/2
+            });
+            return group;
+        }
+
+        function createPencil(x, y, z, length = 20, isRotated = false) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            if (isRotated) group.rotation.y = Math.PI / 2;
+            const r = 2.5;
+            
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r, length, 6), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
+            body.rotation.x = Math.PI/2; addSketchOutline(body); body.receiveShadow=true; body.castShadow=true; group.add(body);
+
+            const metal = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 2, 6), new THREE.MeshToonMaterial({ color: 0xbdc3c7 }));
+            metal.rotation.x = Math.PI/2; metal.position.z = -length/2-1; addSketchOutline(metal); group.add(metal);
+
+            const eraser = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 2, 6), new THREE.MeshToonMaterial({ color: 0xffa8c5 }));
+            eraser.rotation.x = Math.PI/2; eraser.position.z = -length/2-3; addSketchOutline(eraser); group.add(eraser);
+            
+            const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, r, 3, 6), new THREE.MeshToonMaterial({ color: 0xe67e22 }));
+            tip.rotation.x = Math.PI/2; tip.position.z = length/2+1.5; addSketchOutline(tip); group.add(tip);
+
+            scene.add(group);
+            group.updateMatrixWorld(true);
+
+            const w = isRotated ? length + 8 : r * 1.5;
+            const d = isRotated ? r * 1.5 : length + 8;
+            islands.push({
+                type: 'pencil', cx: x, cz: z, mesh: group,
+                minX: x - w/2, maxX: x + w/2, minZ: z - d/2, maxZ: z + d/2, topY: y + r * 0.9
+            });
+            return group;
+        }
+
+        function createRing(x, y, z) {
+            const group = new THREE.Group();
+            group.position.set(x, y, z);
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(6, 1, 8, 16), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
+            ring.rotation.x = Math.PI / 2; addSketchOutline(ring); group.add(ring);
+            
+            const glass = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.5, 0.5, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 }));
+            group.add(glass);
+            scene.add(group);
+            group.updateMatrixWorld(true);
+
+            islands.push({ type: 'ring', cx: x, cz: z, mesh: group, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25 });
+        }
+
+        function createJumpPad(x, y, z, launchVx, launchVy, launchVz) {
+            const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 0.6, 8), new THREE.MeshToonMaterial({ color: 0xff3838 }));
+            pad.position.set(x, y, z); pad.receiveShadow = true; pad.castShadow = true; addSketchOutline(pad); scene.add(pad);
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.15, 4, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+            ring.rotation.x = Math.PI / 2; ring.position.y = 0.35; pad.add(ring);
+            jumpPads.push({ pos: new THREE.Vector3(x, y, z), launch: new THREE.Vector3(launchVx, launchVy, launchVz) });
+        }
+
+        function createMovingPlatform(startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed = 1.0) {
+            const pMesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, depth), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
+            pMesh.receiveShadow = true; pMesh.castShadow = true; addSketchOutline(pMesh); scene.add(pMesh);
+            movingPlatforms.push({ mesh: pMesh, startX, startY, startZ, endX, endY, endZ, width, thickness, depth, speed });
+        }
+
+        // --- HAZARDS & COLLECTIBLES ---
+        function addCoffee(x, y, z, r=3) {
+            const pMesh = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.2, 16), new THREE.MeshBasicMaterial({ color: 0x4a3728 }));
+            pMesh.position.set(x, y, z); scene.add(pMesh);
+            coffeePuddles.push({ x, y, z, r });
+        }
+        function addTack(x, y, z) {
+            const tMesh = new THREE.Mesh(new THREE.ConeGeometry(1, 2, 8), new THREE.MeshToonMaterial({ color: 0xff3333 }));
+            tMesh.position.set(x, y, z); scene.add(tMesh);
+            thumbtacks.push({ x, y, z, r: 1.5 });
+        }
+        function addWind(x, y, z, h=20) {
+            const wMesh = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, h, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.3, wireframe: true }));
+            wMesh.position.set(x, y + h/2, z); scene.add(wMesh);
+            windCurrents.push({ x, y, z, r: 4, h });
+        }
+        function addAirplane(x, y, z) {
+            const aMesh = new THREE.Mesh(new THREE.TetrahedronGeometry(2), new THREE.MeshToonMaterial({ color: 0xffffff }));
+            aMesh.position.set(x, y, z); scene.add(aMesh); addSketchOutline(aMesh);
+            airplanes.push({ mesh: aMesh, startX: x, speed: 0.05 + Math.random() * 0.05 });
+        }
+        function spawnSecretLetter(char, x, y, z) {
+            const lMesh = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.5, 2.5), new THREE.MeshToonMaterial({ color: 0xff9900 }));
+            lMesh.position.set(x, y, z); scene.add(lMesh); addSketchOutline(lMesh);
+            secretLetters.push({ char, mesh: lMesh, collected: false });
+        }
+        function spawnCrystals(cx, cy, cz, count, layout='circle', radius=6) {
+            for (let i = 0; i < count; i++) {
+                const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.85, 0), new THREE.MeshToonMaterial({ color: 0xffea00 }));
+                let x = cx, z = cz;
+                if (layout === 'circle') {
+                    const angle = (i / count) * Math.PI * 2;
+                    x = cx + Math.cos(angle) * radius; z = cz + Math.sin(angle) * radius;
+                } else if (layout === 'x') {
+                    x = cx + (i - (count-1)/2)*4.5;
+                } else if (layout === 'z') {
+                    z = cz + (i - (count-1)/2)*4.5;
+                }
+                crystal.position.set(x, cy, z); crystal.castShadow = true; addSketchOutline(crystal); scene.add(crystal);
+                crystals.push({ mesh: crystal, collected: false, initialY: cy });
+            }
+        }
+
+        // --- LEVEL GENERATION ---
+        function createWorld() {
+            // Phase 1: Hub Base (Y: 0)
+            createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
+            spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
+            spawnSecretLetter("D", -10, 3, -10);
+
+            // Phase 2: Sky Steps (Y: 7 - 21)
+            createEraser(0, 7, -30, 14, true); 
+            createTire(15, 14, -50, 5); 
+            addCoffee(15, 15.1, -50, 4); // Ice physics hazard!
+            spawnCrystals(15, 16.5, -50, 1, 'x'); 
+            createBlock(-15, 21, -70, 8, 2, 8, 0x3498db); 
+            createJumpPad(-15, 22.1, -70, 0, 68, -35);
+
+            // Phase 3: The Floating Atolls (Y: 65 - 85)
+            createBlock(-15, 65, -120, 20, 2, 20, 0x9b59b6);
+            spawnSecretLetter("O", -20, 68, -125);
+            createMovingPlatform(-15, 65, -135, 15, 75, -160, 8, 2, 8, 1.0);
+            createTire(15, 75, -175, 6); 
+            spawnCrystals(15, 77.5, -175, 1, 'x');
+            createMovingPlatform(15, 75, -190, -20, 85, -220, 6, 2, 6, 1.3);
+            createPencil(-20, 85, -235, 20, true); 
+            addTack(-20, 87.5, -240); // Instant death hazard
+            
+            // Phase 4: The Ring Ascent (Y: 85 - 130)
+            createJumpPad(-20, 87.5, -235, 25, 50, -25); 
+            createRing(0, 115, -255);
+            addAirplane(0, 118, -255); // Moving hazard
+            createRing(10, 125, -270);
+            
+            // Phase 5: The Shredder (Y: 135 - 220)
+            createEraser(20, 135, -290, 10, false);
+            spawnSecretLetter("O", 20, 138, -290);
+            createMovingPlatform(20, 135, -305, -10, 150, -330, 5, 2, 5, 1.0); 
+            
+            createBlock(-10, 150, -345, 6, 2, 6, 0xf1c40f, true); // STICKY NOTE - Falls!
+            createPencil(15, 165, -385, 12, false); 
+            createMovingPlatform(15, 165, -400, 15, 195, -400, 5, 2, 5, 1.2); 
+            createTire(15, 195, -415, 3.5); 
+            createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true); // RULER - Moves X!
+            
+            // Phase 6: The Rest Stop (Checkpoint Y: 220)
+            createBlock(-15, 220, -475, 25, 4, 25, 0x2ecc71);
+            spawnCrystals(-15, 222.8, -475, 4, 'circle', 8);
+            spawnSecretLetter("D", -10, 223, -480);
+            
+            // Phase 7: The Bouncy Castle (Y: 230 - 320)
+            createJumpPad(-15, 222.1, -475, 0, 55, -35); 
+            createTire(-15, 250, -510, 6);
+            addWind(-15, 253, -520, 30); // Updraft
+            createJumpPad(-15, 252.5, -510, 35, 50, -20);
+            createTire(20, 280, -530, 6);
+            createJumpPad(20, 282.5, -530, -35, 60, -30);
+            createBlock(-15, 320, -560, 16, 2, 16, 0x3498db); 
+
+            // Phase 8: The High Pencil Bridge (Y: 320 - 450)
+            createMovingPlatform(-15, 320, -575, -15, 335, -590, 6, 2, 6, 1.5);
+            createPencil(-15, 335, -605, 20, false);
+            spawnSecretLetter("L", -15, 338, -605);
+            createMovingPlatform(-15, 335, -620, 0, 350, -625, 5, 2, 5, 2.0);
+            createPencil(0, 350, -640, 25, false);
+            
+            createBlock(0, 350, -660, 8, 2, 8, 0x9b59b6);
+            createMovingPlatform(0, 350, -670, 0, 410, -670, 6, 2, 6, 1.2);
+            createBlock(0, 410, -685, 12, 2, 12, 0xe67e22);
+
+            // Phase 9: The Eraser Gauntlet (Y: 410 - 520)
+            createJumpPad(0, 411.1, -685, 45, 65, 0); 
+            createEraser(45, 450, -685, 12, true);
+            addCoffee(45, 451.6, -685, 4); addTack(45, 451.6, -680);
+            createJumpPad(45, 451.6, -685, 0, 65, -45); 
+
+            createEraser(45, 490, -730, 15, false);
+            createMovingPlatform(45, 490, -745, 15, 510, -765, 4, 2, 4, 1.8); 
+            createMovingPlatform(15, 510, -775, -15, 530, -790, 4, 2, 4, 2.0);
+            
+            // Phase 10: TRUE ZENITH (Y: 530)
+            createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
+            spawnCrystals(-15, 532.8, -810, 6, 'circle', 10);
+            spawnSecretLetter("E", -20, 533, -805);
+
+            portal = new THREE.Group();
+            portal.position.set(-15, 534.5, -810);
+            portalRing = new THREE.Mesh(new THREE.TorusGeometry(3.8, 0.45, 6, 12), new THREE.MeshToonMaterial({ color: 0x00cec9 }));
+            addSketchOutline(portalRing); portal.add(portalRing);
+            portal.add(new THREE.Mesh(new THREE.CircleGeometry(3.5, 12), new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })));
+            scene.add(portal);
+            
+            TOTAL_CRYSTALS = crystals.length;
+            updateLettersUI();
+        }
+
+        // --- AUDIO ---
+        function initAudio() {
+            if (audioStarted) return;
+            Tone.start(); audioStarted = true;
+            chimeSynth = new Tone.PolySynth(Tone.Synth, { oscillator: { type: "square" }, envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 } }).toDestination();
+            chimeSynth.volume.value = -12;
+            bounceSynth = new Tone.MembraneSynth({ pitchDecay: 0.1, octaves: 4, oscillator: { type: "sawtooth" } }).toDestination();
+            bounceSynth.volume.value = -8;
+            padSynth = new Tone.Synth({ oscillator: { type: "sawtooth" }, envelope: { attack: 0.01, decay: 0.2, sustain: 0, release: 0.2 } }).toDestination();
+            padSynth.volume.value = -6;
+        }
+
+        function playCollectSound() { if(audioStarted) chimeSynth.triggerAttackRelease(["C5", "E5", "G5", "C6"][crystalsCollected%4], "8n"); }
+        function playJumpSound() { if(audioStarted) bounceSynth.triggerAttackRelease("C2", "8n"); }
+        function playPadSound() { if(audioStarted) padSynth.triggerAttackRelease("G4", "8n"); }
+
+        // --- CONTROLS ---
+        function setupControls() {
+            window.addEventListener('keydown', (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': keys.forward = true; break;
+                    case 'KeyS': case 'ArrowDown': keys.backward = true; break;
+                    case 'KeyA': case 'ArrowLeft': keys.left = true; break;
+                    case 'KeyD': case 'ArrowRight': keys.right = true; break;
+                    case 'ShiftLeft': case 'ShiftRight': keys.boost = true; break;
+                    case 'Space':
+                        if (canJump && jumpsLeft > 0 && gameActive) {
+                            velocity.y = 20; jumpsLeft--; canJump = false; playJumpSound();
+                        }
+                        break;
+                }
+            });
+            window.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': keys.forward = false; break;
+                    case 'KeyS': case 'ArrowDown': keys.backward = false; break;
+                    case 'KeyA': case 'ArrowLeft': keys.left = false; break;
+                    case 'KeyD': case 'ArrowRight': keys.right = false; break;
+                    case 'ShiftLeft': case 'ShiftRight': keys.boost = false; break;
+                    case 'Space': canJump = true; break;
+                }
+            });
+
+            const bindTouch = (id, key) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+                el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            };
+            bindTouch('btn-up', 'forward'); bindTouch('btn-down', 'backward'); bindTouch('btn-left', 'left'); bindTouch('btn-right', 'right'); bindTouch('btn-boost', 'boost');
+
+            const jumpBtn = document.getElementById('btn-jump');
+            if (jumpBtn) {
+                jumpBtn.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    if (jumpsLeft > 0 && gameActive) { velocity.y = 20; jumpsLeft--; playJumpSound(); }
+                });
+            }
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        // --- UI & SHOP ---
+        function showToast(msg, duration=3000) {
+            const t = document.getElementById('toast');
+            t.innerText = msg; t.style.opacity = '1';
+            if (toastTimeout) clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => { t.style.opacity = '0'; }, duration);
+        }
+
+        function updateLettersUI() {
+            let display = "";
+            for (let i = 0; i < DOODLE_WORD.length; i++) display += collectedLetters.includes(DOODLE_WORD[i]) ? DOODLE_WORD[i] : "_";
+            document.getElementById('doodle-letters').innerText = display;
+            if (collectedLetters.length === DOODLE_WORD.length && !unlocks.ownedItems.includes('doodle_bonus')) {
+                coins += 5000; unlocks.ownedItems.push('doodle_bonus'); saveProfile();
+                showToast("🎉 FOUND ALL LETTERS! +5000 COINS! 🎉");
+                document.getElementById('coins').innerText = coins;
+            }
+        }
+
+        function loadProfile() {
+            const saved = localStorage.getItem('skyRealmProfile');
+            if (saved) {
+                const state = JSON.parse(saved);
+                coins = state.coins || 0;
+                if (state.unlocks) {
+                    unlocks.color = state.unlocks.color || 0xff3366;
+                    unlocks.skin = state.unlocks.skin || 'normal';
+                    unlocks.trail = state.unlocks.trail || 'none';
+                    unlocks.magnet = state.unlocks.magnet || false;
+                    unlocks.maxJumps = state.unlocks.maxJumps || 2;
+                    unlocks.ownedItems = state.unlocks.ownedItems || [];
+                }
+            }
+            document.getElementById('coins').innerText = coins;
+        }
+
+        function saveProfile() { localStorage.setItem('skyRealmProfile', JSON.stringify({ coins, unlocks })); }
+
+        function renderShop() {
+            document.getElementById('shop-coins-display').innerText = coins;
+            const container = document.getElementById('shop-items-container');
+            container.innerHTML = '';
+            
+            shopItems.forEach(item => {
+                const isOwned = unlocks.ownedItems.includes(item.id);
+                let isEquipped = false;
+                if (item.type === 'color' && unlocks.color === item.value) isEquipped = true;
+                if (item.type === 'maxJumps' && unlocks.maxJumps === item.value) isEquipped = true;
+                if (item.type === 'magnet' && unlocks.magnet === item.value) isEquipped = true;
+                if (item.type === 'trail' && unlocks.trail === item.value) isEquipped = true;
+                if (item.type === 'skin' && unlocks.skin === item.value) isEquipped = true;
+
+                let rightSide = isEquipped ? `<span>✅ EQUIPPED</span>` : (isOwned ? `<span>EQUIP</span>` : `<span>🪙 ${item.cost}</span>`);
+                const btn = document.createElement('button');
+                btn.className = `btn-action w-full py-2 ${item.colorClass} text-black font-fredoka text-lg flex justify-between px-4 items-center mb-3`;
+                btn.innerHTML = `<span>${item.name}</span> ${rightSide}`;
+                
+                btn.onclick = () => {
+                    if (isOwned && !isEquipped) {
+                        equipItem(item.type, item.value); renderShop(); showToast(`Equipped ${item.name}!`);
+                    } else if (!isOwned && coins >= item.cost) {
+                        coins -= item.cost; unlocks.ownedItems.push(item.id); equipItem(item.type, item.value);
+                        saveProfile(); renderShop(); showToast(`Bought ${item.name}!`);
+                        document.getElementById('coins').innerText = coins;
+                    } else if (!isOwned) {
+                        showToast("Not enough coins! Collect crystals!");
+                    }
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function equipItem(type, value) {
+            if (type === 'color') { unlocks.color = value; if (player) player.material.color.setHex(value); } 
+            else if (type === 'maxJumps') unlocks.maxJumps = value;
+            else if (type === 'magnet') unlocks.magnet = value;
+            else if (type === 'trail') { unlocks.trail = value; createPlayer(); } 
+            else if (type === 'skin') { unlocks.skin = value; createPlayer(); }
+            saveProfile();
+        }
+
+        // --- MULTIPLAYER ---
+        function setupMultiplayerEvents() {
+            conn.on('data', (data) => {
+                if (data.type === 'sync' && player2) {
+                    player2.position.set(data.p.x, data.p.y, data.p.z);
+                    if (player2.material.color.getHex() !== data.c) player2.material.color.setHex(data.c);
+                }
+                if (data.type === 'collect_crystal') {
+                    const c = crystals[data.index];
+                    if (c && !c.collected) {
+                        c.collected = true; scene.remove(c.mesh); crystalsCollected++;
+                        document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
+                    }
+                }
+                if (data.type === 'collect_letter') {
+                    if (!collectedLetters.includes(data.char)) { collectedLetters.push(data.char); updateLettersUI(); }
+                    const l = secretLetters.find(sl => sl.char === data.char);
+                    if (l && !l.collected) { l.collected = true; scene.remove(l.mesh); }
+                }
+            });
+            conn.on('close', () => { showToast("Player 2 Disconnected"); isMultiplayer = false; });
+        }
+
+        function sendSync() {
+            if (!isMultiplayer || !conn || !conn.open) return;
+            conn.send({ type: 'sync', p: { x: player.position.x, y: player.position.y, z: player.position.z }, c: unlocks.color });
+        }
+
+        // --- GAME LOOP & STATE ---
+        function resetWorld() {
+            player.position.set(0, 5, 0); velocity.set(0, 0, 0); jumpsLeft = unlocks.maxJumps;
+            score = 0; crystalsCollected = 0; collectedLetters = []; startTime = Date.now(); lastCheckpoint = { x: 0, y: 5, z: 0 };
+            
+            crystals.forEach(c => { if(c.collected) { c.collected = false; scene.add(c.mesh); } });
+            secretLetters.forEach(l => { if(l.collected) { l.collected = false; scene.add(l.mesh); } });
+            islands.forEach(isl => {
+                if(isl.isSticky) { isl.falling = false; isl.touchTime = null; isl.mesh.position.y = isl.initialTopY - 1; isl.topY = isl.initialTopY; }
+            });
+            
+            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
+            document.getElementById('score').innerText = '0';
+            updateLettersUI();
+            trailPositions = []; if(trailLine) trailLine.geometry.setPositions([]);
+        }
+
+        function startNewGame(hardcoreMode) {
+            isHardcore = hardcoreMode;
+            initAudio();
+            document.getElementById('overlay').style.display = 'none';
+            document.getElementById('hud').style.display = 'flex';
+            resetWorld();
+            gameActive = true;
+            if (saveInterval) clearInterval(saveInterval);
+            saveInterval = setInterval(() => {
+                if (!gameActive) return;
+                localStorage.setItem('skyRealmSave', JSON.stringify({
+                    px: player.position.x, py: player.position.y, pz: player.position.z,
+                    vx: velocity.x, vy: velocity.y, vz: velocity.z,
+                    score, crystalsCollected, elapsedTime, isHardcore, lastCheckpoint,
+                    crystalStates: crystals.map(c => c.collected),
+                    lettersCollected: collectedLetters
+                }));
+            }, 1000);
+            showToast(`${isHardcore ? 'Hardcore' : 'Normal'} Mode Started!`);
+        }
+        
+        function continueGame() {
+            initAudio(); document.getElementById('overlay').style.display = 'none'; document.getElementById('hud').style.display = 'flex';
+            const saved = localStorage.getItem('skyRealmSave');
+            if (saved) {
+                const s = JSON.parse(saved);
+                isHardcore = s.isHardcore || false; lastCheckpoint = s.lastCheckpoint || { x: 0, y: 5, z: 0 };
+                player.position.set(s.px, s.py, s.pz); velocity.set(s.vx, s.vy, s.vz);
+                score = s.score; crystalsCollected = s.crystalsCollected; startTime = Date.now() - (s.elapsedTime * 1000);
+                collectedLetters = s.lettersCollected || [];
+                s.crystalStates.forEach((col, i) => { if (col && crystals[i]) { crystals[i].collected = true; scene.remove(crystals[i].mesh); } });
+                secretLetters.forEach(l => { if(collectedLetters.includes(l.char)) { l.collected=true; scene.remove(l.mesh); } });
+            } else resetWorld();
+            gameActive = true;
+            document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
+            document.getElementById('score').innerText = score; updateLettersUI();
+            if (saveInterval) clearInterval(saveInterval);
+            saveInterval = setInterval(() => { /* Same save logic */ }, 1000);
+            showToast(`Loaded ${isHardcore ? 'Hardcore' : 'Normal'} Save`);
+        }
+
+        function respawnPlayer() {
+            if (isHardcore) {
+                resetWorld(); localStorage.removeItem('skyRealmSave'); showToast("💀 YOU DIED! Hardcore reset.");
+            } else {
+                player.position.set(lastCheckpoint.x, lastCheckpoint.y, lastCheckpoint.z); velocity.set(0, 0, 0);
+                jumpsLeft = unlocks.maxJumps; score = Math.max(0, score - 50); 
+                document.getElementById('score').innerText = score; showToast("↩️ You fell! Respawned at checkpoint.");
+            }
+        }
+
+        function updatePhysics(delta) {
+            const now = Date.now();
+            
+            // Camera relative input
+            const camF = new THREE.Vector3(); camera.getWorldDirection(camF); camF.y = 0; camF.normalize();
+            const camR = new THREE.Vector3(); camR.crossVectors(camF, new THREE.Vector3(0, 1, 0)).normalize();
+            let iF = 0, iR = 0;
+            if (keys.forward) iF += 1; if (keys.backward) iF -= 1;
+            if (keys.left) iR -= 1; if (keys.right) iR += 1;
+            
+            const iDir = new THREE.Vector3(); iDir.addScaledVector(camF, iF); iDir.addScaledVector(camR, iR);
+            if (iDir.length() > 0) {
+                iDir.normalize(); const accel = keys.boost ? 70 : 45;
+                velocity.x += iDir.x * accel * delta; velocity.z += iDir.z * accel * delta;
+            }
+
+            const maxSpd = keys.boost ? 30 : 18;
+            const hSpd = Math.sqrt(velocity.x*velocity.x + velocity.z*velocity.z);
+            if (hSpd > maxSpd) { velocity.x = (velocity.x/hSpd)*maxSpd; velocity.z = (velocity.z/hSpd)*maxSpd; }
+
+            // Hazards Friction & Gravity
+            let fric = 0.9;
+            for (let cof of coffeePuddles) if (Math.abs(player.position.x - cof.x) < cof.r && Math.abs(player.position.z - cof.z) < cof.r && Math.abs(player.position.y - cof.y) < 2) fric = 0.99;
+            if (!keys.forward && !keys.backward) velocity.z *= fric;
+            if (!keys.left && !keys.right) velocity.x *= fric;
+            
+            velocity.y -= GRAVITY * delta;
+            for (let w of windCurrents) if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) velocity.y += 0.4;
+
+            // Thumbtacks
+            for (let t of thumbtacks) if (player.position.distanceTo(new THREE.Vector3(t.x, t.y, t.z)) < t.r) { respawnPlayer(); return; }
+
+            const oldBottom = (player.position.y - (velocity.y * delta)) - 1.2;
+            player.position.x += velocity.x * delta; player.position.y += velocity.y * delta; player.position.z += velocity.z * delta;
+            player.rotation.z -= velocity.x * delta * 0.4; player.rotation.x += velocity.z * delta * 0.4;
+
+            // Airplanes
+            airplanes.forEach(a => {
+                a.mesh.position.x = a.startX + Math.sin(now * a.speed * 0.01) * 15;
+                a.mesh.rotation.y += 0.05;
+                if (player.position.distanceTo(a.mesh.position) < 2.5) { velocity.x = (player.position.x - a.mesh.position.x); velocity.y = 10; velocity.z = (player.position.z - a.mesh.position.z); }
+            });
+
+            // CCD Collisions
+            isGrounded = false; const r = 1.2; let groundY = -999; const cBot = player.position.y - r;
+
+            for (let isl of islands) {
+                let inside = false;
+                if (isl.type === 'tire' || isl.type === 'ring') {
+                    const d = Math.sqrt(Math.pow(player.position.x - isl.cx, 2) + Math.pow(player.position.z - isl.cz, 2));
+                    if (d <= isl.outerRadius && d >= isl.innerRadius) inside = true;
+                } else if (player.position.x >= isl.minX - r && player.position.x <= isl.maxX + r && player.position.z >= isl.minZ - r && player.position.z <= isl.maxZ + r) {
+                    inside = true;
+                }
+
+                if (inside) {
+                    groundY = Math.max(groundY, isl.topY);
+                    if (isl.isRuler) isl.mesh.position.x = isl.startX + Math.sin(now * 0.002) * 8; // Ruler motion
+
+                    if ((oldBottom >= isl.topY - 1.0 || cBot >= isl.topY - 1.0) && cBot <= isl.topY + 0.1 && velocity.y <= 0) {
+                        if (isl.isSticky) {
+                            if (!isl.touchTime) isl.touchTime = now;
+                            if (now - isl.touchTime > 1500) isl.falling = true;
+                        }
+                        player.position.y = isl.topY + r; velocity.y = 0; isGrounded = true; jumpsLeft = unlocks.maxJumps;
+                        if (!isHardcore && !isl.isSticky && !isl.isRuler && isl.type !== 'tire' && isl.type !== 'ring') lastCheckpoint = { x: isl.cx, y: isl.topY + 3, z: isl.cz };
+                        break;
+                    }
+                }
+            }
+
+            for (let p of movingPlatforms) {
+                if (player.position.x >= p.mesh.position.x - p.width/2 - r && player.position.x <= p.mesh.position.x + p.width/2 + r &&
+                    player.position.z >= p.mesh.position.z - p.depth/2 - r && player.position.z <= p.mesh.position.z + p.depth/2 + r) {
+                    const cTop = p.mesh.position.y + p.thickness/2;
+                    groundY = Math.max(groundY, cTop);
+                    if ((oldBottom >= cTop - 1.0 || cBot >= cTop - 1.0) && cBot <= cTop + 0.1 && velocity.y <= 15) {
+                        player.position.y = cTop + r; velocity.y = 0; isGrounded = true; jumpsLeft = unlocks.maxJumps;
+                        player.position.x += p.deltaX || 0; player.position.y += p.deltaY || 0; player.position.z += p.deltaZ || 0;
+                        break;
+                    }
+                }
+            }
+
+            islands.forEach(isl => { if (isl.isSticky && isl.falling) { isl.mesh.position.y -= 15 * delta; isl.topY = isl.mesh.position.y + 0.5; } });
+
+            if (groundY > -500 && player.position.y >= groundY) {
+                shadowMesh.visible = true; shadowMesh.position.set(player.position.x, groundY + 0.05, player.position.z);
+                const scale = Math.max(0.4, 1.2 - (player.position.y - groundY) * 0.03); shadowMesh.scale.set(scale, scale, scale);
+            } else shadowMesh.visible = false;
+
+            for (let pad of jumpPads) if (now - lastPadHitTime > 250 && player.position.distanceTo(pad.pos) < 2.5 && player.position.y >= pad.pos.y) {
+                velocity.set(pad.launch.x, pad.launch.y, pad.launch.z); jumpsLeft = Math.max(1, unlocks.maxJumps - 1); playPadSound(); lastPadHitTime = now;
+            }
+
+            if (player.position.y < -35) respawnPlayer();
+
+            // Collectibles
+            const mDist = unlocks.magnet ? 6.5 : 2.2;
+            crystals.forEach((c, i) => {
+                if (!c.collected) {
+                    const d = player.position.distanceTo(c.mesh.position);
+                    if (unlocks.magnet && d < mDist && d > 1.5) c.mesh.position.lerp(player.position, 0.1);
+                    if (d < 2.2) {
+                        c.collected = true; scene.remove(c.mesh); crystalsCollected++; score += 100; coins += 100; saveProfile(); playCollectSound();
+                        if (isMultiplayer && conn && conn.open) conn.send({ type: 'collect_crystal', index: i });
+                        document.getElementById('crystal-count').innerText = `${crystalsCollected} / ${TOTAL_CRYSTALS}`;
+                        document.getElementById('score').innerText = score; document.getElementById('coins').innerText = coins;
+                        if (crystalsCollected === TOTAL_CRYSTALS) showToast("Portal Unlocked! Head to the summit portal!");
+                    }
+                }
+            });
+
+            secretLetters.forEach(l => {
+                if(!l.collected) {
+                    l.mesh.rotation.x += 0.02; l.mesh.rotation.y += 0.02;
+                    if (player.position.distanceTo(l.mesh.position) < 3) {
+                        l.collected = true; scene.remove(l.mesh); playCollectSound();
+                        if (!collectedLetters.includes(l.char)) collectedLetters.push(l.char);
+                        updateLettersUI();
+                        if (isMultiplayer && conn && conn.open) conn.send({ type: 'collect_letter', char: l.char });
+                    }
+                }
+            });
+
+            if (portal && crystalsCollected >= TOTAL_CRYSTALS) {
+                portalRing.rotation.z += delta * 3;
+                if (player.position.distanceTo(portal.position) < 3.8) {
+                    gameActive = false; document.getElementById('hud').style.display = 'none'; document.getElementById('overlay').style.display = 'flex';
+                    document.getElementById('victory-card').classList.remove('hidden'); document.getElementById('final-time').innerText = document.getElementById('timer').innerText;
+                    document.getElementById('final-score').innerText = score + Math.max(0, 1000 - elapsedTime * 5) + (isHardcore ? 5000 : 0);
+                    localStorage.removeItem('skyRealmSave'); if (saveInterval) clearInterval(saveInterval);
+                }
+            }
+        }
+
+        function updateCamera() {
+            const targetCamPos = new THREE.Vector3(player.position.x, player.position.y + 13, player.position.z + 24);
+            camera.position.lerp(targetCamPos, 0.08); camera.lookAt(player.position.x, player.position.y + 2, player.position.z);
+            if (gameActive) {
+                const spd = Math.sqrt(velocity.x*velocity.x + velocity.z*velocity.z);
+                if (spd > 1) { camera.position.x += (Math.random()-0.5)*(spd/30)*0.15; camera.position.y += (Math.random()-0.5)*(spd/30)*0.15; }
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (!gameActive) { renderer.render(scene, camera); return; }
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const time = clock.getElapsedTime();
+
+            if (Date.now() % 2 === 0) sendSync(); // Multiplayer network tick
+
+            if (trailLine && unlocks.trail !== 'none') {
+                trailPositions.push(player.position.clone()); if (trailPositions.length > 20) trailPositions.shift();
+                const pos = new Float32Array(trailPositions.length * 3);
+                for(let i=0; i<trailPositions.length; i++) { pos[i*3]=trailPositions[i].x; pos[i*3+1]=trailPositions[i].y; pos[i*3+2]=trailPositions[i].z; }
+                trailLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+            }
+
+            updatePhysics(delta);
+
+            movingPlatforms.forEach(p => {
+                const oldX = p.mesh.position.x, oldY = p.mesh.position.y, oldZ = p.mesh.position.z;
+                const t = (Math.sin(time * p.speed) + 1) * 0.5;
+                p.mesh.position.set(p.startX + t*(p.endX-p.startX), p.startY + t*(p.endY-p.startY), p.startZ + t*(p.endZ-p.startZ));
+                p.deltaX = p.mesh.position.x - oldX; p.deltaY = p.mesh.position.y - oldY; p.deltaZ = p.mesh.position.z - oldZ;
+            });
+            crystals.forEach(c => { if (!c.collected) { c.mesh.rotation.y += delta * 2.5; c.mesh.position.y = c.initialY + Math.sin(time * 3 + c.mesh.position.x) * 0.35; } });
+
+            elapsedTime = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('timer').innerText = `${String(Math.floor(elapsedTime/60)).padStart(2,'0')}:${String(elapsedTime%60).padStart(2,'0')}`;
+            
+            updateCamera();
+            renderer.render(scene, camera);
+        }
+
+        // --- MENU EVENTS ---
+        window.onload = function() {
+            loadProfile(); initScene(); createPlayer(); createWorld(); setupControls();
+            document.getElementById('crystal-count').innerText = `0 / ${TOTAL_CRYSTALS}`;
+            if (localStorage.getItem('skyRealmSave')) document.getElementById('continue-btn').classList.remove('hidden');
+
+            document.getElementById('start-normal-btn').onclick = () => startNewGame(false);
+            document.getElementById('start-hardcore-btn').onclick = () => startNewGame(true);
+            document.getElementById('continue-btn').onclick = continueGame;
+            document.getElementById('open-shop-btn').onclick = () => { document.getElementById('start-card').classList.add('hidden'); document.getElementById('shop-card').classList.remove('hidden'); renderShop(); };
+            document.getElementById('close-shop-btn').onclick = () => { document.getElementById('shop-card').classList.add('hidden'); document.getElementById('start-card').classList.remove('hidden'); };
+            document.getElementById('restart-btn').onclick = () => { localStorage.removeItem('skyRealmSave'); location.reload(); };
+
+            document.getElementById('multiplayer-menu-btn').onclick = () => { document.getElementById('start-card').classList.add('hidden'); document.getElementById('multiplayer-card').classList.remove('hidden'); };
+            document.getElementById('back-mp-btn').onclick = () => { document.getElementById('multiplayer-card').classList.add('hidden'); document.getElementById('start-card').classList.remove('hidden'); if(peer){ peer.destroy(); peer=null; conn=null; }};
+            
+            document.getElementById('host-btn').onclick = () => {
+                document.getElementById('mp-status').innerText = "Creating room...";
+                peer = new Peer();
+                peer.on('open', id => { document.getElementById('room-id-display').innerText = id; document.getElementById('mp-status').innerText = "Waiting for Player 2..."; });
+                peer.on('connection', c => { conn = c; isHost = true; isMultiplayer = true; document.getElementById('mp-status').innerText = "Player 2 joined! Starting..."; setupMultiplayerEvents(); createPlayer2(); setTimeout(() => startNewGame(false), 1500); });
+            };
+            document.getElementById('join-btn').onclick = () => {
+                const id = document.getElementById('join-id-input').value.trim(); if (!id) return;
+                document.getElementById('mp-status').innerText = "Connecting...";
+                peer = new Peer();
+                peer.on('open', () => { conn = peer.connect(id); conn.on('open', () => { isHost = false; isMultiplayer = true; setupMultiplayerEvents(); createPlayer2(); startNewGame(false); }); });
+            };
+            animate();
+        };
+    </script>
+</body>
+</html>
