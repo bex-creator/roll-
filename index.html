@@ -848,160 +848,284 @@
             switches.push({ id, x, y, z, group, mesh: button, startY: y + 0.2, active: false });
         }
 
-        function createSoloWorld() {
-            // ZONE 1: The Notebook Tower (Original)
-            createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
-            createCheckpoint(0, 1, 0, "Start Pad");
-            spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
-            spawnSecretLetter("D", -10, 3, -10);
+function createSoloWorld() {
+    // ==========================================
+    // ZONES 1-8: THE HANDCRAFTED WARM-UP
+    // ==========================================
+    createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
+    createCheckpoint(0, 1, 0, "Start Pad");
+    spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
+    spawnSecretLetter("D", -10, 3, -10);
 
-            createEraser(0, 7, -30, 16, true); 
-            createTire(15, 14, -50, 6); 
-            addCoffee(15, 15.1, -50, 4);
-            spawnCrystals(15, 16.5, -50, 1, 'x'); 
-            
-            createBlock(-15, 21, -70, 12, 2, 12, 0x3498db); 
-            createJumpPad(-15, 22.1, -70, 0, 60, -20); 
+    createEraser(0, 7, -30, 16, true); 
+    createTire(15, 14, -50, 6); 
+    addCoffee(15, 15.1, -50, 4);
+    
+    createBlock(-15, 21, -70, 12, 2, 12, 0x3498db); 
+    createJumpPad(-15, 22.1, -70, 0, 60, -20); 
 
-            createBlock(-15, 65, -120, 24, 2, 24, 0x9b59b6);
-            createCheckpoint(-15, 67, -120, "Atoll Overlook");
-            spawnCrystals(-12, 67, -120, 2, 'x');
-            spawnSecretLetter("O", -20, 68, -125);
-            createMovingPlatform(-15, 65, -135, 15, 75, -160, 10, 2, 10, 1.0);
-            createTire(15, 75, -175, 7); 
-            spawnCrystals(15, 77.5, -175, 1, 'x');
-            createMovingPlatform(15, 75, -190, -20, 85, -220, 8, 2, 8, 1.3);
-            createPencil(-20, 85, -235, 20, true); 
-            addTack(-17, 87.5, -240);
-            
-            createJumpPad(-20, 87.5, -235, 12, 70, -16); 
-            createRing(0, 115, -255);
-            addAirplane(0, 118, -255);
-            createRing(10, 125, -270);
-            
-            createEraser(20, 135, -290, 12, false);
-            spawnSecretLetter("O", 20, 138, -290);
-            createMovingPlatform(20, 135, -305, -10, 150, -330, 8, 2, 8, 1.0); 
-            
-            createBlock(-10, 150, -345, 10, 2, 10, 0xf1c40f, true);
-            spawnCrystals(-10, 152, -345, 1, 'x');
-            
-            createPencil(5, 156, -365, 12, false); 
-            createMovingPlatform(5, 156, -380, 15, 195, -400, 7, 2, 7, 1.2); 
-            createTire(15, 195, -415, 4.5); 
-            createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true);
-            
-            createJumpPad(15, 196.1, -430, -9, 65, -13);
-            
-            createBlock(-15, 220, -475, 30, 4, 30, 0x2ecc71);
-            createCheckpoint(-15, 222, -475, "Midway Rest Stop");
-            spawnCrystals(-15, 222.8, -475, 4, 'circle', 8);
-            spawnSecretLetter("D", -10, 223, -480);
-            
-            createJumpPad(-15, 222.1, -475, 0, 60, -12); 
-            createTire(-15, 250, -510, 7);
-            addWind(-15, 253, -520, 30);
-            createJumpPad(-15, 252.5, -510, 10, 70, -6);
-            createTire(20, 280, -530, 7);
-            createJumpPad(20, 282.5, -530, -10, 75, -9);
-            
-            createBlock(-15, 320, -560, 20, 2, 20, 0x3498db); 
-            createCheckpoint(-15, 322, -560, "Bouncy Peak");
+    createBlock(-15, 65, -120, 24, 2, 24, 0x9b59b6);
+    createCheckpoint(-15, 67, -120, "Atoll Overlook");
+    spawnSecretLetter("O", -20, 68, -125);
+    createMovingPlatform(-15, 65, -135, 15, 75, -160, 10, 2, 10, 1.0);
+    createTire(15, 75, -175, 7); 
+    createMovingPlatform(15, 75, -190, -20, 85, -220, 8, 2, 8, 1.3);
+    createPencil(-20, 85, -235, 20, true); 
+    addTack(-17, 87.5, -240);
+    
+    createJumpPad(-20, 87.5, -235, 12, 70, -16); 
+    createRing(0, 115, -255);
+    addAirplane(0, 118, -255);
+    
+    createEraser(20, 135, -290, 12, false);
+    spawnSecretLetter("O", 20, 138, -290);
+    createMovingPlatform(20, 135, -305, -10, 150, -330, 8, 2, 8, 1.0); 
+    
+    createBlock(-10, 150, -345, 10, 2, 10, 0xf1c40f, true);
+    
+    createPencil(5, 156, -365, 12, false); 
+    createMovingPlatform(5, 156, -380, 15, 195, -400, 7, 2, 7, 1.2); 
+    createTire(15, 195, -415, 4.5); 
+    createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true);
+    createJumpPad(15, 196.1, -430, -9, 65, -13);
+    
+    createBlock(-15, 220, -475, 30, 4, 30, 0x2ecc71);
+    createCheckpoint(-15, 222, -475, "Midway Rest Stop");
+    spawnSecretLetter("D", -10, 223, -480);
+    
+    createJumpPad(-15, 222.1, -475, 0, 60, -12); 
+    createTire(-15, 250, -510, 7);
+    addWind(-15, 253, -520, 30);
+    createJumpPad(-15, 252.5, -510, 10, 70, -6);
+    createTire(20, 280, -530, 7);
+    createJumpPad(20, 282.5, -530, -10, 75, -9);
+    
+    createBlock(-15, 320, -560, 20, 2, 20, 0x3498db); 
+    createCheckpoint(-15, 322, -560, "Bouncy Peak");
 
-            createMovingPlatform(-15, 320, -575, -15, 335, -590, 8, 2, 8, 1.5);
-            createPencil(-15, 335, -605, 20, false);
-            spawnSecretLetter("L", -15, 338, -605);
-            createMovingPlatform(-15, 335, -620, 0, 350, -625, 7, 2, 7, 2.0);
-            createPencil(0, 350, -640, 25, false);
+    createMovingPlatform(-15, 320, -575, -15, 335, -590, 8, 2, 8, 1.5);
+    createPencil(-15, 335, -605, 20, false);
+    spawnSecretLetter("L", -15, 338, -605);
+    createMovingPlatform(-15, 335, -620, 0, 350, -625, 7, 2, 7, 2.0);
+    createPencil(0, 350, -640, 25, false);
+    
+    createBlock(0, 350, -660, 10, 2, 10, 0x9b59b6);
+    createMovingPlatform(0, 350, -670, 0, 410, -670, 8, 2, 8, 1.2);
+    
+    createBlock(0, 410, -685, 16, 2, 16, 0xe67e22);
+    createCheckpoint(0, 412, -685, "Pencil Summit");
+
+    createJumpPad(0, 411.1, -685, 12, 75, 0); 
+    createEraser(45, 450, -685, 14, true);
+    addCoffee(45, 451.6, -685, 4); addTack(45, 451.6, -680);
+    createJumpPad(45, 451.6, -685, 0, 75, -12); 
+
+    createEraser(45, 490, -730, 18, false);
+    createMovingPlatform(45, 490, -745, 15, 510, -765, 6, 2, 6, 1.8); 
+    createMovingPlatform(15, 510, -775, -15, 530, -790, 6, 2, 6, 2.0);
+    
+    createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
+    createCheckpoint(-25, 532, -810, "Stratosphere Gate");
+    spawnSecretLetter("E", -20, 533, -805);
+
+    createJumpPad(-15, 532.1, -810, 0, 85, -25);
+    createTire(-15, 580, -860, 8);
+    addAirplane(-15, 585, -875);
+    createMovingPlatform(-15, 580, -880, 20, 595, -910, 10, 2, 10, 2.5);
+
+    createBlock(20, 595, -930, 16, 2, 16, 0x8e44ad);
+    createBlock(20, 595, -955, 6, 2, 30, 0xe0e0e0);
+    addWind(10, 596, -955, 20); 
+
+    createJumpPad(20, 596.1, -975, -15, 70, -15);
+    createRing(5, 630, -995);
+    
+    createBlock(-25, 660, -1030, 20, 2, 20, 0xf1c40f);
+    createCheckpoint(-25, 662, -1030, "The Golden Rings");
+    createPencil(-25, 660, -1055, 25, false);
+    createJumpPad(-25, 663, -1065, 0, 100, -35); 
+
+    createBlock(-25, 730, -1140, 12, 2, 12, 0x333333);
+    createCheckpoint(-25, 732, -1140, "The Void Edge");
+    
+    createMovingPlatform(-25, 730, -1160, 15, 740, -1180, 5, 2, 5, 1.0);
+    createMovingPlatform(15, 740, -1195, -15, 755, -1220, 5, 2, 5, 1.5);
+    
+    createEraser(-15, 755, -1240, 8, true);
+    createJumpPad(-15, 756.6, -1240, 25, 80, -25);
+    
+    createTire(15, 800, -1280, 6);
+    createJumpPad(30, 832.5, -1310, -35, 90, -30);
+
+    createBlock(-20, 880, -1370, 24, 2, 24, 0x1abc9c);
+    createCheckpoint(-20, 882, -1370, "Cloud Nine");
+
+    createMovingPlatform(-20, 880, -1390, -20, 950, -1450, 15, 2, 15, 1.5);
+    addAirplane(-10, 920, -1420);
+
+    createPencil(-20, 950, -1470, 20, false);
+    createJumpPad(-20, 953.6, -1485, 0, 120, -40); 
+    createRing(0, 1020, -1540);
+    createRing(0, 1070, -1580);
+
+    createBlock(0, 1150, -1680, 40, 5, 40, 0xffd700);
+    createCheckpoint(0, 1153, -1680, "The Golden Plateau");
+    spawnSecretLetter("J", -18, 1158, -1722);
+    
+    createMovingPlatform(0, 1150, -1705, -35, 1165, -1740, 6, 2, 6, 1.8);
+    createMovingPlatform(-35, 1165, -1755, 35, 1180, -1790, 6, 2, 6, 2.2);
+    
+    createBlock(35, 1220, -1850, 15, 2, 15, 0x3498db);
+    createCheckpoint(35, 1222, -1850, "Windmill Way");
+    createPencil(35, 1220, -1875, 25, true);
+    addWind(45, 1220, -1875, 35);
+    createJumpPad(35, 1221, -1895, -20, 95, -35);
+    
+    createBlock(-25, 1380, -2000, 25, 2, 25, 0x95a5a6);
+    createCheckpoint(-25, 1382, -2000, "Clockwork Skies");
+    createEraser(-25, 1380, -2030, 15, false);
+    addTack(-25, 1382, -2035);
+    spawnSecretLetter("U", -25, 1384, -2030);
+    
+    createMovingPlatform(-25, 1380, -2055, 20, 1400, -2090, 8, 2, 8, 3.0); 
+    createBlock(20, 1400, -2110, 10, 2, 10, 0xe0e0e0, true); 
+    
+    createJumpPad(20, 1401, -2115, 0, 110, -40);
+    addAirplane(20, 1470, -2150);
+    
+    createBlock(-15, 1540, -2250, 16, 2, 16, 0xe67e22);
+    createCheckpoint(-15, 1542, -2250, "The Gauntlet");
+    
+    createTire(-15, 1542, -2270, 9);
+    createBlock(-15, 1590, -2310, 8, 2, 8, 0x2ecc71);
+    createTire(-15, 1592, -2310, 10);
+    createBlock(-15, 1650, -2360, 8, 2, 8, 0x3498db);
+    spawnSecretLetter("M", -15, 1653, -2360);
+    createJumpPad(-15, 1651, -2365, 15, 140, -50); 
+    
+    createRing(0, 1750, -2410);
+    createRing(0, 1810, -2470);
+    
+    createBlock(0, 1850, -2550, 30, 2, 30, 0x8e44ad);
+    createCheckpoint(0, 1852, -2550, "Cosmic Library Gateway");
+    
+    createPencil(-15, 1850, -2585, 30, false);
+    createEraser(0, 1850, -2615, 20, true);
+    
+    createJumpPad(0, 1852, -2620, -30, 80, -35);
+    createMovingPlatform(-30, 1890, -2660, 30, 1920, -2720, 10, 2, 10, 1.8);
+    createBlock(30, 1920, -2740, 12, 2, 12, 0x333333);
+    spawnSecretLetter("P", 30, 1923, -2740);
+    
+    addWind(30, 1925, -2755, 40); 
+    createJumpPad(30, 1921, -2740, -30, 160, -45);
+    
+    createBlock(0, 2200, -2950, 30, 4, 30, 0xffffff); 
+    createCheckpoint(0, 2202, -2950, "The Marathon Starting Line");
+    createJumpPad(0, 2202, -2970, 0, 90, -40);
+
+
+    // ==========================================
+    // ZONE 9: THE 2-HOUR MARATHON (Procedurally Generated)
+    // 1,000 platforms that get progressively harder, steeper, and faster
+    // ==========================================
+    let curY = 2270;
+    let curZ = -3050;
+    
+    for (let i = 1; i <= 1000; i++) {
+        // Snake back and forth horizontally based on sine wave
+        let curX = Math.sin(i * 0.3) * 45; 
+        
+        // Massive checkpoints only every 100 platforms (Brutal)
+        if (i % 100 === 0) {
+            createBlock(0, curY, curZ, 30, 2, 30, 0x111111);
+            createCheckpoint(0, curY + 2, curZ, "Marathon Checkpoint " + (i / 100));
+            createJumpPad(0, curY + 2, curZ - 10, 0, 100, -35);
             
-            createBlock(0, 350, -660, 10, 2, 10, 0x9b59b6);
-            spawnCrystals(0, 352, -660, 1, 'x');
-            createMovingPlatform(0, 350, -670, 0, 410, -670, 8, 2, 8, 1.2);
-            
-            createBlock(0, 410, -685, 16, 2, 16, 0xe67e22);
-            createCheckpoint(0, 412, -685, "Pencil Summit");
-
-            createJumpPad(0, 411.1, -685, 12, 75, 0); 
-            createEraser(45, 450, -685, 14, true);
-            addCoffee(45, 451.6, -685, 4); addTack(45, 451.6, -680);
-            createJumpPad(45, 451.6, -685, 0, 75, -12); 
-
-            createEraser(45, 490, -730, 18, false);
-            createMovingPlatform(45, 490, -745, 15, 510, -765, 6, 2, 6, 1.8); 
-            createMovingPlatform(15, 510, -775, -15, 530, -790, 6, 2, 6, 2.0);
-            
-            createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
-            createCheckpoint(-25, 532, -810, "Old Summit");
-            spawnCrystals(-15, 532.8, -810, 6, 'circle', 10);
-            spawnSecretLetter("E", -20, 533, -805);
-
-            // ZONE 2: THE STARLIGHT STRATOSPHERE
-            createJumpPad(-15, 532.1, -810, 0, 85, -25);
-            createTire(-15, 580, -860, 8);
-            addAirplane(-15, 585, -875);
-            createMovingPlatform(-15, 580, -880, 20, 595, -910, 10, 2, 10, 2.5);
-
-            createBlock(20, 595, -930, 16, 2, 16, 0x8e44ad);
-            createCheckpoint(20, 597, -930, "Stratosphere Entry");
-            
-            // Slippery bridge sequence
-            createBlock(20, 595, -955, 6, 2, 30, 0xe0e0e0);
-            addCoffee(20, 596.1, -950, 3);
-            addCoffee(20, 596.1, -960, 3);
-            addWind(10, 596, -955, 20); // Blowing across
-
-            createJumpPad(20, 596.1, -975, -15, 70, -15);
-            createRing(5, 630, -995);
-            createRing(-10, 645, -1010);
-            
-            createBlock(-25, 660, -1030, 20, 2, 20, 0xf1c40f);
-            createCheckpoint(-25, 662, -1030, "The Golden Rings");
-            spawnCrystals(-25, 663, -1030, 4, 'circle', 6);
-
-            // The long pencil jump
-            createPencil(-25, 660, -1055, 25, false);
-            createJumpPad(-25, 663, -1065, 0, 100, -35); // MASSIVE LEAP
-
-            // ZONE 3: THE TRUE VOID
-            createBlock(-25, 730, -1140, 12, 2, 12, 0x333333);
-            createCheckpoint(-25, 732, -1140, "The Void Edge");
-            
-            // Tiny moving islands
-            createMovingPlatform(-25, 730, -1160, 15, 740, -1180, 5, 2, 5, 1.0);
-            createMovingPlatform(15, 740, -1195, -15, 755, -1220, 5, 2, 5, 1.5);
-            
-            createEraser(-15, 755, -1240, 8, true);
-            createJumpPad(-15, 756.6, -1240, 25, 80, -25);
-            
-            createTire(15, 800, -1280, 6);
-            createTire(30, 830, -1310, 6);
-            createJumpPad(30, 832.5, -1310, -35, 90, -30);
-
-            createBlock(-20, 880, -1370, 24, 2, 24, 0x1abc9c);
-            createCheckpoint(-20, 882, -1370, "Cloud Nine");
-            spawnCrystals(-20, 883, -1370, 5, 'x');
-
-            // Final Ascendancy
-            createMovingPlatform(-20, 880, -1390, -20, 950, -1450, 15, 2, 15, 1.5);
-            addAirplane(-10, 920, -1420);
-            addAirplane(-30, 930, -1430);
-
-            createPencil(-20, 950, -1470, 20, false);
-            createEraser(-20, 952, -1485, 10, true);
-            createJumpPad(-20, 953.6, -1485, 0, 120, -40); // The Ultimate Launch
-
-            createRing(0, 1020, -1540);
-            createRing(0, 1070, -1580);
-            createRing(0, 1120, -1620);
-
-            // ZONE 4: THE ZENITH
-            createBlock(0, 1150, -1680, 40, 5, 40, 0xffd700);
-            createCheckpoint(0, 1153, -1680, "THE TRUE ZENITH");
-            spawnCrystals(0, 1154, -1680, 12, 'circle', 15);
-
-            buildPortal(0, 1153.5, -1680);
-            TOTAL_CRYSTALS = crystals.length;
+            // Advance coordinates for the huge jump
+            curY += 80;
+            curZ -= 70;
+            continue; 
         }
+
+        // Difficulty scaling variables
+        let platformSize = Math.max(4, 12 - (i * 0.005)); // Platforms get smaller
+        let moveSpeed = 1.0 + (i * 0.002); // Moving platforms get faster
+        let gapY = 35 + (i * 0.015); // Jumps get vertically steeper
+        let gapZ = 30 + (i * 0.01); // Jumps get wider
+        
+        let typeIndex = i % 6;
+
+        // Generate variety of platform types
+        if (typeIndex === 0) {
+            // Standard small block
+            createBlock(curX, curY, curZ, platformSize, 2, platformSize, 0x3498db);
+        } else if (typeIndex === 1) {
+            // Eraser
+            createEraser(curX, curY, curZ, platformSize + 2, i % 2 === 0);
+        } else if (typeIndex === 2) {
+            // High speed moving platform bridging a huge gap
+            createMovingPlatform(curX - 25, curY, curZ, curX + 25, curY + 15, curZ - 25, platformSize, 2, platformSize, moveSpeed);
+            curY += 15; 
+            curZ -= 25;
+        } else if (typeIndex === 3) {
+            // Ice block (slippery)
+            createBlock(curX, curY, curZ, platformSize, 2, platformSize, 0xe0e0e0, true, false);
+            if (i % 3 === 0) addTack(curX, curY + 2, curZ); // Random tacks on ice
+        } else if (typeIndex === 4) {
+            // Pencil tightrope
+            createPencil(curX, curY, curZ, platformSize * 2, i % 2 === 0);
+        } else {
+            // Bouncy block
+            createBlock(curX, curY, curZ, platformSize, 2, platformSize, 0x9b59b6);
+            createTire(curX, curY + 2, curZ, 7);
+            curY += 20; // Tire boosts you higher
+        }
+
+        // Occasional Hazards & Helpers
+        if (i % 14 === 0) {
+            addWind(curX, curY + 5, curZ, 30 + (i * 0.02)); // Wind gets stronger
+        }
+        if (i % 27 === 0) {
+            addAirplane(curX, curY + 25, curZ - 20); // Emergency catch mechanisms
+        }
+        if (i % 33 === 0) {
+            addCoffee(curX, curY + 2.1, curZ, 5); // Rare speed boost
+        }
+        if (i % 7 === 0) {
+            spawnCrystals(curX, curY + 3, curZ, 1, 'x'); // Breadcrumbs
+        }
+
+        // Advance coordinates for the next iteration
+        curY += gapY;
+        curZ -= gapZ;
+    }
+
+
+    // ==========================================
+    // ZONE 10: THE END OF TIME (Final Zenith)
+    // ==========================================
+    // After 1,000 platforms, curY is roughly ~60,000 and curZ is ~-45,000
+    
+    createJumpPad(0, curY, curZ, 0, 200, -80); // Final massive launch
+    
+    createRing(0, curY + 100, curZ - 40);
+    createRing(0, curY + 150, curZ - 60);
+    createRing(0, curY + 200, curZ - 80);
+
+    // The Ultimate Goal
+    createBlock(0, curY + 250, curZ - 120, 80, 5, 80, 0xffffff); 
+    createCheckpoint(0, curY + 255, curZ - 120, "THE TRUE ZENITH");
+    
+    // An absurd amount of crystals to reward the 2-hour climb
+    spawnCrystals(0, curY + 256, curZ - 120, 50, 'circle', 30);
+    spawnCrystals(0, curY + 256, curZ - 120, 25, 'circle', 15);
+    spawnCrystals(0, curY + 256, curZ - 120, 10, 'x');
+    
+    buildPortal(0, curY + 255, curZ - 120);
+    
+    TOTAL_CRYSTALS = crystals.length;
+}
 
         function createMountainWorld() {
             // Getting Over It Style - Purely Vertical, No Safety Nets.
