@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+=<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -75,7 +75,6 @@
     </style>
 </head>
 <body>
-
     <div id="toast">Collect all crystals to unlock the Sky Portal!</div>
 
     <div id="hud" style="display: none;">
@@ -161,6 +160,7 @@
             <div id="new-game-btns" class="space-y-3 mb-4">
                 <button id="start-normal-btn" class="btn-action w-full py-3 bg-blue-300 text-black font-fredoka text-xl">PLAY NORMAL</button>
                 <button id="start-hardcore-btn" class="btn-action w-full py-3 bg-red-400 text-black font-fredoka text-xl">PLAY HARDCORE (Permadeath)</button>
+                <button id="start-mountain-btn" class="btn-action w-full py-3 bg-orange-400 text-black font-fredoka text-xl">🏔️ CLIMB THE MOUNTAIN (No Checkpoints!)</button>
                 <button id="multiplayer-menu-btn" class="btn-action w-full py-3 bg-purple-300 text-black font-fredoka text-xl">🤝 CO-OP MULTIPLAYER</button>
                 <button id="open-shop-btn" class="btn-action w-full py-3 bg-pink-300 text-black font-fredoka text-xl mt-2">🛒 OPEN DOODLE SHOP</button>
             </div>
@@ -229,7 +229,7 @@
         let gameActive = false;
         let score = 0, crystalsCollected = 0, TOTAL_CRYSTALS = 0;
         let startTime = 0, elapsedTime = 0, lastPadHitTime = 0, toastTimeout = null;
-        let isHardcore = false, lastCheckpoint = { x: 0, y: 5, z: 0 };
+        let isHardcore = false, isMountainMode = false, lastCheckpoint = { x: 0, y: 5, z: 0 };
         let collectedLetters = [];
         const DOODLE_WORD = "DOODLE";
 
@@ -237,7 +237,9 @@
         let keys = { forward: false, backward: false, left: false, right: false, jump: false, boost: false };
         let velocity = new THREE.Vector3();
         let isGrounded = false, jumpsLeft = 2;
-        const GRAVITY = 42;
+        
+        // MODIFIED PHYSICS: Reduced gravity for floatier jumps, easier platforming
+        const GRAVITY = 32; // Changed from 42
         const BALL_RADIUS = 1.2;
         
         // Physics Modifiers & Juiciness
@@ -422,9 +424,11 @@
             }
         }
 
-        function startNewGame(hardcore, coop = false) {
-            isHardcore = hardcore;
-            isMultiplayer = coop;
+        function startNewGame(mode = 'normal') {
+            isHardcore = (mode === 'hardcore');
+            isMountainMode = (mode === 'mountain');
+            isMultiplayer = (mode === 'coop');
+            
             score = 0;
             crystalsCollected = 0;
             collectedLetters = [];
@@ -432,13 +436,16 @@
             startTime = Date.now();
             lastCheckpoint = { x: 0, y: 5, z: 0 };
             
-            clearWorld(); // Wipe the existing map before loading
+            clearWorld(); 
             
             if (isMultiplayer) {
-                createCoopWorld(); // Load the completely different co-op map!
+                createCoopWorld();
                 showToast("Co-op Map Loaded! Work together!");
+            } else if (isMountainMode) {
+                createMountainWorld();
+                showToast("Mountain Mode! Don't fall...");
             } else {
-                createSoloWorld(); // Load standard map
+                createSoloWorld();
             }
             
             player.position.set(0, 5, 0);
@@ -462,7 +469,6 @@
             clock.start();
             
             if (isMultiplayer && conn && conn.open) {
-                // Ensure partner has our profile visuals
                 conn.send({ type: 'profile', color: unlocks.color, skin: unlocks.skin });
             }
         }
@@ -625,7 +631,7 @@
         function createEraser(x, y, z, length = 12, isRotated = false) {
             const group = new THREE.Group();
             group.position.set(x, y, z);
-            const w = isRotated ? length : 8, d = isRotated ? 8 : length, h = 3;
+            const w = isRotated ? length : 10, d = isRotated ? 10 : length, h = 3;
 
             const m1 = new THREE.Mesh(new THREE.BoxGeometry(isRotated?w/2:w, h, isRotated?d:d/2), new THREE.MeshToonMaterial({ color: 0xffa8c5 }));
             m1.position.z = isRotated ? 0 : d/4; m1.position.x = isRotated ? -w/4 : 0;
@@ -678,21 +684,21 @@
         function createRing(x, y, z) {
             const group = new THREE.Group();
             group.position.set(x, y, z);
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(6, 1, 8, 16), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(7, 1.5, 8, 16), new THREE.MeshToonMaterial({ color: 0xf1c40f }));
             ring.rotation.x = Math.PI / 2; addSketchOutline(ring); group.add(ring);
             
-            const glass = new THREE.Mesh(new THREE.CylinderGeometry(5.5, 5.5, 0.5, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 }));
+            const glass = new THREE.Mesh(new THREE.CylinderGeometry(6.5, 6.5, 0.5, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.5 }));
             group.add(glass);
             scene.add(group);
             group.updateMatrixWorld(true);
 
-            islands.push({ type: 'ring', cx: x, cz: z, group: group, mesh: ring, outerRadius: 7.0, innerRadius: 0, topY: y + 0.25, bottomY: y - 0.25 });
+            islands.push({ type: 'ring', cx: x, cz: z, group: group, mesh: ring, outerRadius: 8.0, innerRadius: 0, topY: y + 0.25, bottomY: y - 0.25 });
         }
 
         function createJumpPad(x, y, z, launchVx, launchVy, launchVz) {
-            const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 0.6, 8), new THREE.MeshToonMaterial({ color: 0xff3838 }));
+            const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.0, 0.6, 8), new THREE.MeshToonMaterial({ color: 0xff3838 }));
             pad.position.set(x, y, z); pad.receiveShadow = true; pad.castShadow = true; addSketchOutline(pad); scene.add(pad);
-            const ring = new THREE.Mesh(new THREE.TorusGeometry(1.8, 0.15, 4, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+            const ring = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.15, 4, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
             ring.rotation.x = Math.PI / 2; ring.position.y = 0.35; pad.add(ring);
             jumpPads.push({ mesh: pad, pos: new THREE.Vector3(x, y, z), launch: new THREE.Vector3(launchVx, launchVy, launchVz) });
         }
@@ -709,11 +715,13 @@
             pMesh.position.set(x, y, z); scene.add(pMesh);
             coffeePuddles.push({ mesh: pMesh, x, y, z, r });
         }
+        
         function addTack(x, y, z) {
             const tMesh = new THREE.Mesh(new THREE.ConeGeometry(1, 2, 8), new THREE.MeshToonMaterial({ color: 0xff3333 }));
             tMesh.position.set(x, y, z); scene.add(tMesh);
             thumbtacks.push({ mesh: tMesh, x, y, z, r: 1.5 });
         }
+        
         function addWind(x, y, z, h=20) {
             const wMesh = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, h, 16), new THREE.MeshBasicMaterial({ color: 0x88ccff, transparent: true, opacity: 0.3, wireframe: true }));
             wMesh.position.set(x, y + h/2, z); scene.add(wMesh);
@@ -797,7 +805,7 @@
             const flag = new THREE.Mesh(flagGeo, flagMat);
             flag.position.set(1.25, 6, 0); addSketchOutline(flag); group.add(flag);
 
-            const padGeo = new THREE.CylinderGeometry(3, 3.2, 0.3, 12);
+            const padGeo = new THREE.CylinderGeometry(3.5, 3.8, 0.3, 12);
             const padMat = new THREE.MeshToonMaterial({ color: 0x34495e });
             const pad = new THREE.Mesh(padGeo, padMat);
             pad.position.y = 0.15; addSketchOutline(pad); group.add(pad);
@@ -841,86 +849,218 @@
         }
 
         function createSoloWorld() {
+            // ZONE 1: The Notebook Tower (Original)
             createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
             createCheckpoint(0, 1, 0, "Start Pad");
             spawnCrystals(0, 1.8, 0, 3, 'circle', 8);
             spawnSecretLetter("D", -10, 3, -10);
 
-            createEraser(0, 7, -30, 14, true); 
-            createTire(15, 14, -50, 5); 
+            createEraser(0, 7, -30, 16, true); 
+            createTire(15, 14, -50, 6); 
             addCoffee(15, 15.1, -50, 4);
             spawnCrystals(15, 16.5, -50, 1, 'x'); 
-            createBlock(-15, 21, -70, 8, 2, 8, 0x3498db); 
-            createJumpPad(-15, 22.1, -70, 0, 75, -35);
+            
+            createBlock(-15, 21, -70, 12, 2, 12, 0x3498db); 
+            createJumpPad(-15, 22.1, -70, 0, 60, -20); 
 
-            createBlock(-15, 65, -120, 20, 2, 20, 0x9b59b6);
+            createBlock(-15, 65, -120, 24, 2, 24, 0x9b59b6);
             createCheckpoint(-15, 67, -120, "Atoll Overlook");
             spawnCrystals(-12, 67, -120, 2, 'x');
             spawnSecretLetter("O", -20, 68, -125);
-            createMovingPlatform(-15, 65, -135, 15, 75, -160, 8, 2, 8, 1.0);
-            createTire(15, 75, -175, 6); 
+            createMovingPlatform(-15, 65, -135, 15, 75, -160, 10, 2, 10, 1.0);
+            createTire(15, 75, -175, 7); 
             spawnCrystals(15, 77.5, -175, 1, 'x');
-            createMovingPlatform(15, 75, -190, -20, 85, -220, 6, 2, 6, 1.3);
+            createMovingPlatform(15, 75, -190, -20, 85, -220, 8, 2, 8, 1.3);
             createPencil(-20, 85, -235, 20, true); 
-            addTack(-20, 87.5, -240);
+            addTack(-17, 87.5, -240);
             
-            createJumpPad(-20, 87.5, -235, 25, 85, -25); 
+            createJumpPad(-20, 87.5, -235, 12, 70, -16); 
             createRing(0, 115, -255);
             addAirplane(0, 118, -255);
             createRing(10, 125, -270);
             
-            createEraser(20, 135, -290, 10, false);
+            createEraser(20, 135, -290, 12, false);
             spawnSecretLetter("O", 20, 138, -290);
-            createMovingPlatform(20, 135, -305, -10, 150, -330, 5, 2, 5, 1.0); 
+            createMovingPlatform(20, 135, -305, -10, 150, -330, 8, 2, 8, 1.0); 
             
-            createBlock(-10, 150, -345, 6, 2, 6, 0xf1c40f, true);
+            createBlock(-10, 150, -345, 10, 2, 10, 0xf1c40f, true);
             spawnCrystals(-10, 152, -345, 1, 'x');
-            createPencil(15, 165, -385, 12, false); 
-            createMovingPlatform(15, 165, -400, 15, 195, -400, 5, 2, 5, 1.2); 
-            createTire(15, 195, -415, 3.5); 
+            
+            createPencil(5, 156, -365, 12, false); 
+            createMovingPlatform(5, 156, -380, 15, 195, -400, 7, 2, 7, 1.2); 
+            createTire(15, 195, -415, 4.5); 
             createBlock(15, 195, -430, 14, 2, 4, 0xe0e0e0, false, true);
             
-            createBlock(-15, 220, -475, 25, 4, 25, 0x2ecc71);
+            createJumpPad(15, 196.1, -430, -9, 65, -13);
+            
+            createBlock(-15, 220, -475, 30, 4, 30, 0x2ecc71);
             createCheckpoint(-15, 222, -475, "Midway Rest Stop");
             spawnCrystals(-15, 222.8, -475, 4, 'circle', 8);
             spawnSecretLetter("D", -10, 223, -480);
             
-            createJumpPad(-15, 222.1, -475, 0, 55, -35); 
-            createTire(-15, 250, -510, 6);
+            createJumpPad(-15, 222.1, -475, 0, 60, -12); 
+            createTire(-15, 250, -510, 7);
             addWind(-15, 253, -520, 30);
-            createJumpPad(-15, 252.5, -510, 35, 65, -20);
-            createTire(20, 280, -530, 6);
-            createJumpPad(20, 282.5, -530, -35, 70, -30);
-            createBlock(-15, 320, -560, 16, 2, 16, 0x3498db); 
+            createJumpPad(-15, 252.5, -510, 10, 70, -6);
+            createTire(20, 280, -530, 7);
+            createJumpPad(20, 282.5, -530, -10, 75, -9);
+            
+            createBlock(-15, 320, -560, 20, 2, 20, 0x3498db); 
             createCheckpoint(-15, 322, -560, "Bouncy Peak");
 
-            createMovingPlatform(-15, 320, -575, -15, 335, -590, 6, 2, 6, 1.5);
+            createMovingPlatform(-15, 320, -575, -15, 335, -590, 8, 2, 8, 1.5);
             createPencil(-15, 335, -605, 20, false);
             spawnSecretLetter("L", -15, 338, -605);
-            createMovingPlatform(-15, 335, -620, 0, 350, -625, 5, 2, 5, 2.0);
+            createMovingPlatform(-15, 335, -620, 0, 350, -625, 7, 2, 7, 2.0);
             createPencil(0, 350, -640, 25, false);
             
-            createBlock(0, 350, -660, 8, 2, 8, 0x9b59b6);
+            createBlock(0, 350, -660, 10, 2, 10, 0x9b59b6);
             spawnCrystals(0, 352, -660, 1, 'x');
-            createMovingPlatform(0, 350, -670, 0, 410, -670, 6, 2, 6, 1.2);
-            createBlock(0, 410, -685, 12, 2, 12, 0xe67e22);
+            createMovingPlatform(0, 350, -670, 0, 410, -670, 8, 2, 8, 1.2);
+            
+            createBlock(0, 410, -685, 16, 2, 16, 0xe67e22);
             createCheckpoint(0, 412, -685, "Pencil Summit");
 
-            createJumpPad(0, 411.1, -685, 45, 65, 0); 
-            createEraser(45, 450, -685, 12, true);
+            createJumpPad(0, 411.1, -685, 12, 75, 0); 
+            createEraser(45, 450, -685, 14, true);
             addCoffee(45, 451.6, -685, 4); addTack(45, 451.6, -680);
-            createJumpPad(45, 451.6, -685, 0, 65, -45); 
+            createJumpPad(45, 451.6, -685, 0, 75, -12); 
 
-            createEraser(45, 490, -730, 15, false);
-            createMovingPlatform(45, 490, -745, 15, 510, -765, 4, 2, 4, 1.8); 
-            createMovingPlatform(15, 510, -775, -15, 530, -790, 4, 2, 4, 2.0);
+            createEraser(45, 490, -730, 18, false);
+            createMovingPlatform(45, 490, -745, 15, 510, -765, 6, 2, 6, 1.8); 
+            createMovingPlatform(15, 510, -775, -15, 530, -790, 6, 2, 6, 2.0);
             
             createBlock(-15, 530, -810, 35, 4, 35, 0x2ecc71);
-            createCheckpoint(-25, 532, -810, "Summit Checkpoint");
+            createCheckpoint(-25, 532, -810, "Old Summit");
             spawnCrystals(-15, 532.8, -810, 6, 'circle', 10);
             spawnSecretLetter("E", -20, 533, -805);
 
-            buildPortal(-15, 534.5, -810);
+            // ZONE 2: THE STARLIGHT STRATOSPHERE
+            createJumpPad(-15, 532.1, -810, 0, 85, -25);
+            createTire(-15, 580, -860, 8);
+            addAirplane(-15, 585, -875);
+            createMovingPlatform(-15, 580, -880, 20, 595, -910, 10, 2, 10, 2.5);
+
+            createBlock(20, 595, -930, 16, 2, 16, 0x8e44ad);
+            createCheckpoint(20, 597, -930, "Stratosphere Entry");
+            
+            // Slippery bridge sequence
+            createBlock(20, 595, -955, 6, 2, 30, 0xe0e0e0);
+            addCoffee(20, 596.1, -950, 3);
+            addCoffee(20, 596.1, -960, 3);
+            addWind(10, 596, -955, 20); // Blowing across
+
+            createJumpPad(20, 596.1, -975, -15, 70, -15);
+            createRing(5, 630, -995);
+            createRing(-10, 645, -1010);
+            
+            createBlock(-25, 660, -1030, 20, 2, 20, 0xf1c40f);
+            createCheckpoint(-25, 662, -1030, "The Golden Rings");
+            spawnCrystals(-25, 663, -1030, 4, 'circle', 6);
+
+            // The long pencil jump
+            createPencil(-25, 660, -1055, 25, false);
+            createJumpPad(-25, 663, -1065, 0, 100, -35); // MASSIVE LEAP
+
+            // ZONE 3: THE TRUE VOID
+            createBlock(-25, 730, -1140, 12, 2, 12, 0x333333);
+            createCheckpoint(-25, 732, -1140, "The Void Edge");
+            
+            // Tiny moving islands
+            createMovingPlatform(-25, 730, -1160, 15, 740, -1180, 5, 2, 5, 3.0);
+            createMovingPlatform(15, 740, -1195, -15, 755, -1220, 5, 2, 5, 3.5);
+            
+            createEraser(-15, 755, -1240, 8, true);
+            createJumpPad(-15, 756.6, -1240, 25, 80, -25);
+            
+            createTire(15, 800, -1280, 6);
+            createTire(30, 830, -1310, 6);
+            createJumpPad(30, 832.5, -1310, -35, 90, -30);
+
+            createBlock(-20, 880, -1370, 24, 2, 24, 0x1abc9c);
+            createCheckpoint(-20, 882, -1370, "Cloud Nine");
+            spawnCrystals(-20, 883, -1370, 5, 'x');
+
+            // Final Ascendancy
+            createMovingPlatform(-20, 880, -1390, -20, 950, -1450, 15, 2, 15, 1.5);
+            addAirplane(-10, 920, -1420);
+            addAirplane(-30, 930, -1430);
+
+            createPencil(-20, 950, -1470, 20, false);
+            createEraser(-20, 952, -1485, 10, true);
+            createJumpPad(-20, 953.6, -1485, 0, 120, -40); // The Ultimate Launch
+
+            createRing(0, 1020, -1540);
+            createRing(0, 1070, -1580);
+            createRing(0, 1120, -1620);
+
+            // ZONE 4: THE ZENITH
+            createBlock(0, 1150, -1680, 40, 5, 40, 0xffd700);
+            createCheckpoint(0, 1153, -1680, "THE TRUE ZENITH");
+            spawnCrystals(0, 1154, -1680, 12, 'circle', 15);
+
+            buildPortal(0, 1153.5, -1680);
+            TOTAL_CRYSTALS = crystals.length;
+        }
+
+        function createMountainWorld() {
+            // Getting Over It Style - Purely Vertical, No Safety Nets.
+            // Only ONE checkpoint at the very bottom.
+            createBlock(0, 0, 0, 30, 2, 30, 0x2ecc71);
+            createCheckpoint(0, 1, 0, "The Base Camp");
+            
+            // Spiral Upwards tightly. X/Z bounded within [-40, 40]
+            
+            // Section 1: The warm up
+            createEraser(10, 8, 10, 12, false);
+            createTire(20, 20, 0, 5);
+            createPencil(10, 32, -15, 15, true);
+            
+            // Section 2: Slippery slopes
+            createBlock(-10, 45, -15, 8, 2, 8, 0x3498db);
+            addCoffee(-10, 46.1, -15, 4);
+            createMovingPlatform(-10, 45, -2, -25, 60, 5, 6, 2, 6, 1.5);
+            
+            // Section 3: Tiny Tires and Pads
+            createTire(-25, 75, 20, 4);
+            createTire(-10, 90, 30, 4);
+            createJumpPad(-10, 92.5, 30, 20, 60, -15);
+            
+            // Section 4: Precision landing
+            createEraser(15, 125, 10, 8, false); // Tiny!
+            createBlock(30, 140, 0, 6, 2, 6, 0x9b59b6);
+            addTack(30, 141.5, 0); // Spiky center
+            
+            createPencil(20, 155, -15, 20, false);
+            createJumpPad(20, 156.5, -22, -35, 75, 0); // Big cross-map jump
+            
+            // Section 5: The Wind Tunnel
+            createBlock(-25, 200, -20, 12, 2, 12, 0xf1c40f);
+            addWind(-25, 202, -20, 40); // Massive vertical wind
+            createRing(-25, 230, -5);
+            createMovingPlatform(-25, 240, 10, 0, 260, 25, 5, 2, 5, 2.5); // Very fast, tiny
+            
+            // Section 6: No room for error
+            createEraser(15, 280, 20, 6, true);
+            createTire(25, 300, 5, 3);
+            createTire(15, 320, -10, 3);
+            createJumpPad(15, 322.5, -10, -25, 80, -15);
+            
+            // Section 7: The Final Gauntlet
+            createBlock(-20, 380, -25, 8, 2, 8, 0xe67e22);
+            addCoffee(-20, 381.1, -25, 4);
+            createMovingPlatform(-20, 380, -10, -20, 410, 10, 4, 2, 4, 3.0); // Extreme speed
+            
+            createPencil(-5, 430, 15, 12, false);
+            createJumpPad(-5, 431.5, 18, 10, 85, -15);
+            
+            createRing(10, 480, 0);
+            
+            // The Summit of the Mountain
+            createBlock(10, 520, -20, 20, 4, 20, 0xffd700);
+            spawnCrystals(10, 523, -20, 8, 'circle', 6);
+            buildPortal(10, 522.5, -20);
+            
             TOTAL_CRYSTALS = crystals.length;
         }
 
@@ -930,45 +1070,45 @@
             createCheckpoint(0, 1, 10, "Co-op Start");
             spawnCrystals(0, 1.8, 10, 3, 'circle', 8);
 
-            // High Ledge - Requires partner bounce to reach!
-            createBlock(0, 14, -20, 20, 2, 20, 0x3498db); 
+            // High Ledge - Requires partner bounce to reach! (made slightly larger)
+            createBlock(0, 14, -20, 24, 2, 24, 0x3498db); 
             createCoopSwitch(0, 15, -20, 'switch1'); 
             spawnSecretLetter("C", 0, 16, -25);
 
             // Elevator that brings P2 up when P1 hits the switch!
             // Player 2 stands on this block. Player 1 bounces on P2 to reach the ledge above.
-            createMovingPlatform(0, 0, -5, 0, 14, -5, 10, 2, 10, 0, 'switch1');
+            createMovingPlatform(0, 0, -5, 0, 14, -5, 12, 2, 12, 0, 'switch1');
 
             // Room 2: The Sliding Bridges
             createBlock(0, 14, -50, 30, 2, 30, 0x9b59b6);
             createCheckpoint(0, 15, -50, "The Gap");
 
             // Player 1 hits Switch 2 on the left side
-            createBlock(-12, 14.5, -60, 6, 3, 6, 0xf1c40f);
+            createBlock(-12, 14.5, -60, 8, 3, 8, 0xf1c40f);
             createCoopSwitch(-12, 16, -60, 'switch2');
 
-            // Bridge A slides in from the left
-            createMovingPlatform(-40, 14, -85, 0, 14, -85, 10, 2, 40, 0, 'switch2');
+            // Bridge A slides in from the left (made wider)
+            createMovingPlatform(-40, 14, -85, 0, 14, -85, 14, 2, 40, 0, 'switch2');
 
             // Middle Island
-            createBlock(0, 14, -115, 20, 2, 20, 0xe67e22);
+            createBlock(0, 14, -115, 24, 2, 24, 0xe67e22);
             spawnCrystals(0, 15, -115, 3, 'circle', 6);
 
             // Switch 3 on the right side
-            createBlock(8, 14.5, -125, 6, 3, 6, 0xf1c40f);
+            createBlock(8, 14.5, -125, 8, 3, 8, 0xf1c40f);
             createCoopSwitch(8, 16, -125, 'switch3');
 
             // Bridge B slides in from the right
-            createMovingPlatform(40, 14, -145, 0, 14, -145, 10, 2, 40, 0, 'switch3');
+            createMovingPlatform(40, 14, -145, 0, 14, -145, 14, 2, 40, 0, 'switch3');
 
             // Room 3: Reunion and Bouncy Challenge
             createBlock(0, 14, -185, 40, 2, 30, 0x2ecc71);
             createCheckpoint(0, 15, -185, "Bounce Together");
             spawnSecretLetter("O", 0, 16, -185);
 
-            createTire(-10, 20, -215, 8);
-            createTire(10, 30, -245, 8);
-            createJumpPad(10, 30.5, -245, -30, 65, -25);
+            createTire(-10, 20, -215, 9);
+            createTire(10, 30, -245, 9);
+            createJumpPad(10, 30.5, -245, -30, 75, -30);
 
             // Final Stretch
             createBlock(-30, 55, -285, 30, 2, 30, 0x3498db);
@@ -1076,12 +1216,13 @@
             });
         }
 
+        // BUFFED: Jump power increased substantially alongside gravity reduction
         function triggerJumpIfPossible() {
             if (!gameActive) return;
             if (isGrounded || coyoteTimer > 0) {
-                executeJump(24, true);
+                executeJump(28, true); // Was 24
             } else if (jumpsLeft > 0) {
-                executeJump(21, false);
+                executeJump(24, false); // Was 21
             }
         }
 
@@ -1149,9 +1290,10 @@
             inputDir.addScaledVector(camF, iF).addScaledVector(camR, iR);
             if (inputDir.lengthSq() > 0) inputDir.normalize();
 
-            const topSpeed = keys.boost ? 28 : 18;
+            // BUFFED speeds to ensure large gaps are clearable
+            const topSpeed = keys.boost ? 34 : 24; 
             if (isGrounded) {
-                const accel = keys.boost ? 70 : 50;
+                const accel = keys.boost ? 80 : 60;
                 velocity.x += inputDir.x * accel * subDelta;
                 velocity.z += inputDir.z * accel * subDelta;
 
@@ -1173,7 +1315,7 @@
                     }
                 }
             } else {
-                const airAccel = keys.boost ? 40 : 30;
+                const airAccel = keys.boost ? 55 : 40;
                 velocity.x += inputDir.x * airAccel * subDelta;
                 velocity.z += inputDir.z * airAccel * subDelta;
                 velocity.x *= (1 - 0.8 * subDelta);
@@ -1186,6 +1328,7 @@
                 velocity.z = (velocity.z / hSpd) * topSpeed;
             }
 
+            // Applies reduced gravity
             velocity.y -= GRAVITY * subDelta;
             for (let w of windCurrents) {
                 if (Math.abs(player.position.x - w.x) < w.r && Math.abs(player.position.z - w.z) < w.r && player.position.y > w.y && player.position.y < w.y + w.h) {
@@ -1204,8 +1347,8 @@
                 const distToP2 = player.position.distanceTo(player2.position);
                 if (distToP2 < BALL_RADIUS * 2.2) {
                     if (player.position.y > player2.position.y + BALL_RADIUS * 0.5 && velocity.y < 0) {
-                        // Boing! Jump off partner!
-                        velocity.y = 38; // Super bounce
+                        // Boing! Jump off partner! (Slightly boosted)
+                        velocity.y = 42; 
                         isGrounded = false;
                         jumpsLeft = unlocks.maxJumps;
                         ballSquish.set(0.6, 1.5, 0.6);
@@ -1225,7 +1368,7 @@
             jumpPads.forEach(pad => {
                 const distXZ = Math.hypot(player.position.x - pad.pos.x, player.position.z - pad.pos.z);
                 const distY = Math.abs((player.position.y - BALL_RADIUS) - pad.pos.y);
-                if (distXZ < 2.6 && distY < 2.0 && (now - lastPadHitTime > 250)) {
+                if (distXZ < 3.0 && distY < 2.0 && (now - lastPadHitTime > 250)) {
                     lastPadHitTime = now;
                     velocity.x = pad.launch.x; velocity.y = pad.launch.y; velocity.z = pad.launch.z;
                     isGrounded = false; coyoteTimer = 0;
@@ -1273,7 +1416,7 @@
 
                 if (player.position.distanceTo(a.mesh.position) < 3.2) {
                     velocity.x = (player.position.x - a.mesh.position.x) * 12;
-                    velocity.y = 18;
+                    velocity.y = 22; // Buffed bounce
                     velocity.z = (player.position.z - a.mesh.position.z) * 12;
                     ballSquish.set(1.3, 0.7, 1.3);
                 }
@@ -1281,7 +1424,6 @@
 
             isGrounded = false;
 
-            // Collision Detection
             islands.forEach(island => {
                 if (island.type === 'block' || island.type === 'eraser' || island.type === 'pencil') {
                     const expMinX = island.minX - BALL_RADIUS * 0.7; const expMaxX = island.maxX + BALL_RADIUS * 0.7;
@@ -1291,7 +1433,7 @@
                         player.position.z >= expMinZ && player.position.z <= expMaxZ) {
 
                         const topSurface = island.topY + BALL_RADIUS;
-                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
+                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.8 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
                             if (player.position.y < topSurface) player.position.y = topSurface;
                             if (prevPos.y - player.position.y > 4) ballSquish.set(1.3, 0.7, 1.3);
                             velocity.y = 0; isGrounded = true; coyoteTimer = 0.15; jumpsLeft = unlocks.maxJumps;
@@ -1311,7 +1453,7 @@
                     const isInsideRadius = (island.type === 'ring') ? (dist <= island.outerRadius) : (dist >= island.innerRadius && dist <= island.outerRadius);
                     if (isInsideRadius) {
                         const topSurface = island.topY + BALL_RADIUS;
-                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.6 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
+                        if (prevPos.y >= island.topY + BALL_RADIUS - 0.8 && player.position.y <= topSurface + 0.5 && velocity.y <= 1.0) {
                             player.position.y = topSurface; velocity.y = 0; isGrounded = true; coyoteTimer = 0.15; jumpsLeft = unlocks.maxJumps;
                         }
                     }
@@ -1608,8 +1750,9 @@
             createPlayer();
             initMultiplayer();
 
-            document.getElementById('start-normal-btn').onclick = () => startNewGame(false, false);
-            document.getElementById('start-hardcore-btn').onclick = () => startNewGame(true, false);
+            document.getElementById('start-normal-btn').onclick = () => startNewGame('normal');
+            document.getElementById('start-hardcore-btn').onclick = () => startNewGame('hardcore');
+            document.getElementById('start-mountain-btn').onclick = () => startNewGame('mountain');
             document.getElementById('open-shop-btn').onclick = () => {
                 renderShop();
                 document.getElementById('start-card').classList.add('hidden');
